@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="el">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Υπερωρίες</title>
+<link rel="icon" href="icon-192.png" type="image/png">
+<style>
+  /* Public, read-only report. Printable. Shows only what ot_public_report() returns:
+     dates + overtime minutes, and only while sharing is switched on in the app. */
+  :root{ --ink:#1A1A18; --ink2:#6B6B64; --rule:#E2E1DC; --acc:#D97757; --bg:#FAFAF7;
+    --fut:"Futura","Futura PT","Avenir Next",Avenir,"Century Gothic",system-ui,sans-serif; }
+  *{box-sizing:border-box}
+  html{background:var(--bg)}
+  body{margin:0 auto; max-width:720px; padding:calc(env(safe-area-inset-top) + 28px) 18px 48px;
+    font-family:var(--fut); color:var(--ink); background:var(--bg); line-height:1.45; -webkit-text-size-adjust:100%}
+  h1{font-size:26px; font-weight:500; letter-spacing:.02em; margin:0 0 4px}
+  .sub{color:var(--ink2); font-size:14.5px}
+  .total{margin:22px 0 26px; padding:16px 18px; border:1px solid var(--rule); border-left:3px solid var(--acc); border-radius:10px; background:#fff}
+  .total .n{font-size:30px}
+  .total .k{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink2)}
+  h2{font-size:13px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink2); font-weight:500;
+    display:flex; justify-content:space-between; margin:28px 0 6px; padding-bottom:8px; border-bottom:1px solid var(--rule)}
+  table{width:100%; border-collapse:collapse; font-size:15px}
+  td{padding:9px 12px 9px 0; border-bottom:1px solid var(--rule)}
+  td:last-child{padding-right:0}
+  td.r{text-align:right; white-space:nowrap}
+  td.dow{color:var(--ink2); width:40%}
+  .actions{display:flex; gap:8px; margin-top:30px}
+  button{font-family:inherit; font-size:15px; min-height:46px; padding:0 18px; border-radius:10px; border:1px solid var(--acc); background:var(--acc); color:#fff; cursor:pointer}
+  .foot{margin-top:28px; font-size:12.5px; color:var(--ink2)}
+  .off{margin-top:18vh; text-align:center; color:var(--ink2)}
+  @media print{
+    html,body{background:#fff}
+    body{padding:0; max-width:none}
+    .actions{display:none}
+    .total{border-color:#999}
+    h2{break-after:avoid}
+    tr{break-inside:avoid}
+  }
+</style>
+<div id="app"><p class="off">Φόρτωση…</p></div>
+<script>
+const SB_URL='https://dgnxbcoxdpdloplkcmzs.supabase.co';
+const SB_KEY='sb_publishable_kXCrlX-9S1ud3bs9Zdyt1A_9n-U1X1F';
+const MONTHS=['Ιανουάριος','Φεβρουάριος','Μάρτιος','Απρίλιος','Μάιος','Ιούνιος','Ιούλιος','Αύγουστος','Σεπτέμβριος','Οκτώβριος','Νοέμβριος','Δεκέμβριος'];
+const DAYS=['Κυριακή','Δευτέρα','Τρίτη','Τετάρτη','Πέμπτη','Παρασκευή','Σάββατο'];
+function el(tag, props, ...kids){
+  const n=document.createElement(tag);
+  if(props) for(const k in props){ if(k==='class') n.className=props[k]; else if(k.slice(0,2)==='on') n[k]=props[k]; else n.setAttribute(k,props[k]); }
+  kids.flat().forEach(c=>{ if(c!=null) n.appendChild(typeof c==='string'?document.createTextNode(c):c); });
+  return n;
+}
+function dmy(s){ const p=s.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
+function dur(min){ const h=Math.floor(min/60), m=min%60, out=[];
+  if(h) out.push(h+(h===1?' ώρα':' ώρες')); if(m) out.push(m+' λεπτά'); return out.join(' ')||'0 λεπτά'; }
+function dec(min){ return (Math.round(min/60*100)/100).toLocaleString('el-GR'); }
+function off(){ const a=document.getElementById('app'); a.innerHTML='';
+  a.appendChild(el('p',{class:'off'},'Η αναφορά δεν είναι διαθέσιμη αυτή τη στιγμή.')); }
+
+async function load(){
+  const t=new URLSearchParams(location.search).get('t');
+  if(!t){ off(); return; }
+  let d;
+  try{
+    const r=await fetch(SB_URL+'/rest/v1/rpc/ot_public_report',{method:'POST',
+      headers:{apikey:SB_KEY,'Content-Type':'application/json'}, body:JSON.stringify({p_token:t})});
+    if(!r.ok) throw new Error(r.status);
+    d=await r.json();
+  }catch(e){ off(); return; }
+  if(!d){ off(); return; }
+
+  const groups=new Map(); let total=0;
+  /* One row per day: two entries on the same date are summed. */
+  const byDay=new Map();
+  d.entries.forEach(e=>{ byDay.set(e.date,(byDay.get(e.date)||0)+e.minutes); total+=e.minutes; });
+  for(const [date,minutes] of byDay){ const k=date.slice(0,7); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push({date,minutes}); }
+  const days=byDay.size;
+  const period = d.from&&d.to ? dmy(d.from)+' – '+dmy(d.to) : d.from ? 'Από '+dmy(d.from) : d.to ? 'Έως '+dmy(d.to) : 'Όλες οι καταχωρήσεις';
+  document.title=d.title;
+
+  const a=document.getElementById('app'); a.innerHTML='';
+  a.append(
+    el('h1',null,d.title),
+    el('div',{class:'sub'},'Περίοδος: '+period),
+    el('div',{class:'total'}, el('div',{class:'k'},'Σύνολο υπερωριών'),
+      el('div',{class:'n'}, dur(total)), el('div',{class:'sub'}, (total%60 ? dec(total)+' ώρες · ' : '')+days+(days===1?' ημέρα':' ημέρες'))));
+  if(!d.entries.length) a.append(el('p',{class:'sub'},'Δεν υπάρχουν υπερωρίες σε αυτή την περίοδο.'));
+  for(const [k,rows] of groups){
+    const [y,m]=k.split('-'); const sum=rows.reduce((s,e)=>s+e.minutes,0);
+    a.append(el('h2',null, el('span',null,MONTHS[+m-1]+' '+y), el('span',null,dur(sum))),
+      el('table',null, rows.map(e=>{ const dt=new Date(e.date+'T12:00:00');
+        return el('tr',null, el('td',null,dmy(e.date)), el('td',{class:'dow'},DAYS[dt.getDay()]), el('td',{class:'r'},dur(e.minutes))); })));
+  }
+  a.append(
+    el('div',{class:'actions'}, el('button',{onclick:()=>window.print()},'Εκτύπωση / PDF')),
+    el('div',{class:'foot'},'Ενημερώθηκε: '+new Date().toLocaleString('el-GR',{dateStyle:'short', timeStyle:'short'})));
+}
+load();
+</script>

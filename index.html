@@ -1,0 +1,609 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Overtime">
+<meta name="theme-color" content="#000000">
+<meta name="format-detection" content="telephone=no">
+<title>Overtime</title>
+<!-- Relative hrefs: served under /overtime/ on GitHub Pages and at a root locally. -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png" type="image/png">
+<style>
+  :root{
+    --bg:#000; --card:#141413; --card2:#1D1D1B; --rule:#2C2C29;
+    --ink:#EFEFED; --ink2:#8C8C86; --acc:#D97757; --acc-soft:#2B1A14;
+    --bad:#E5484D; --bad-soft:#2B1214;
+    --fut:"Futura","Futura PT","Avenir Next",Avenir,"Century Gothic",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:manipulation}
+  html{background:var(--bg); -webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    padding:calc(env(safe-area-inset-top) + 18px)
+            calc(env(safe-area-inset-right) + 16px)
+            calc(env(safe-area-inset-bottom) + 96px)
+            calc(env(safe-area-inset-left) + 16px);
+    background:var(--bg); color:var(--ink);
+    font-family:var(--fut); font-size:16px; line-height:1.45; letter-spacing:.005em;
+    max-width:560px; margin-inline:auto;
+    -webkit-font-smoothing:antialiased; overscroll-behavior-y:none;
+  }
+  h1,h2{margin:0; font-weight:500}
+  button{font-family:inherit; -webkit-user-select:none; user-select:none; cursor:pointer; color:var(--ink)}
+  button:active{opacity:.65}
+  input,select,textarea{font-family:inherit; font-size:16px; color:var(--ink); background:var(--card2); border:1px solid var(--rule); border-radius:10px}
+  input,select{padding:11px 12px; width:100%; min-width:0}
+  input[type=date]{-webkit-appearance:none; appearance:none; min-height:46px}
+  ::placeholder{color:#5E5E57}
+
+  .topbar{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px}
+  .topbar h1{font-size:22px; letter-spacing:.06em; text-transform:uppercase}
+  .nav{display:flex; gap:6px; flex:none; align-items:center}
+  .nav button{font-size:19px; width:46px; height:44px; color:var(--ink2); line-height:1;
+    background:var(--card); border:1px solid var(--rule); border-radius:10px}
+  .nav .today{width:auto; padding:0 14px; font-size:14px; color:var(--acc)}
+  .livepill{font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--acc);
+    border:1px solid var(--acc); border-radius:20px; padding:4px 10px; background:var(--acc-soft)}
+
+  .status{margin:0 0 22px; padding:15px 16px; background:var(--card);
+    border:1px solid var(--rule); border-left:3px solid var(--acc);
+    border-radius:10px; font-size:15px; line-height:1.55; color:var(--ink2)}
+  .status b{color:var(--ink); font-weight:500}
+
+  section{margin-bottom:32px}
+  .head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:13px; padding-bottom:9px; border-bottom:1px solid var(--rule)}
+  .head h2{font-size:13px; letter-spacing:.16em; color:var(--ink2); text-transform:uppercase}
+  .head .sub{font-size:13px; color:var(--ink2)}
+
+  .form{display:flex; flex-direction:column; gap:14px; padding:16px; background:var(--card); border:1px solid var(--rule); border-radius:12px; margin-bottom:16px}
+  .form.editing{border-color:var(--acc)}
+  .form label{min-width:0; font-size:12.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink2); display:flex; flex-direction:column; gap:6px}
+  .seg{display:flex; gap:6px}
+  .seg button{flex:1; min-height:46px; font-size:14.5px; color:var(--ink2); background:var(--card2); border:1px solid var(--rule); border-radius:10px; padding:0 6px}
+  .seg button[aria-pressed="true"]{color:#100E0D; background:var(--acc); border-color:var(--acc)}
+  .daterow{display:flex; gap:6px}
+  .daterow input{flex:1}
+  .daterow button{flex:none; min-height:46px; padding:0 12px; font-size:13.5px; color:var(--ink2); background:var(--card2); border:1px solid var(--rule); border-radius:10px}
+  .daterow button.on{color:var(--acc); border-color:var(--acc)}
+  .dur{display:flex; align-items:center; justify-content:space-between; gap:6px}
+  .dur .val{font-size:30px; letter-spacing:.02em; text-align:center; white-space:nowrap}
+  .dur .val small{font-size:15px; color:var(--ink2); margin:0 4px 0 2px}
+  .stepper{display:flex; flex-direction:column; align-items:center; gap:6px}
+  .stepper .k{font-size:11px; letter-spacing:.14em; color:var(--ink2); text-transform:uppercase}
+  .stepper div{display:flex; gap:6px}
+  .stepper button{width:44px; height:46px; font-size:20px; background:var(--card2); border:1px solid var(--rule); border-radius:10px; color:var(--ink2)}
+  .quick{display:flex; flex-wrap:wrap; gap:6px}
+  .quick button{min-height:40px; padding:0 13px; font-size:14px; color:var(--ink2); background:var(--card2); border:1px solid var(--rule); border-radius:20px}
+  .quick button.on{color:var(--acc); border-color:var(--acc)}
+  .btnrow{display:flex; gap:8px}
+  .btnrow button{flex:1; min-height:50px; font-size:15px; background:var(--card2); border:1px solid var(--rule); border-radius:11px}
+  .btnrow button.pri{background:var(--acc); border-color:var(--acc); color:#100E0D}
+  .btnrow button.danger{color:var(--bad); border-color:#4A2325}
+  .mut{font-size:13px; color:var(--ink2); line-height:1.5}
+  .msg{font-size:13.5px; color:var(--acc); min-height:18px; margin:4px 0 0}
+  .msg.err{color:var(--bad)}
+
+  .row{display:flex; align-items:center; gap:12px; padding:13px 2px; border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:0}
+  .row.tap{cursor:pointer}
+  .row .d{flex:none; width:92px; font-size:15px}
+  .row .d small{display:block; font-size:12px; color:var(--ink2)}
+  .row .name{flex:1; min-width:0; font-size:14px; color:var(--ink2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .row .v{flex:none; text-align:right; font-size:15.5px}
+  .row .v small{display:block; font-size:12px; color:var(--ink2)}
+  .tag{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink2); border:1px solid var(--rule); border-radius:6px; padding:2px 6px; margin-right:6px}
+  .empty{padding:18px 0; color:var(--ink2); font-size:14px}
+
+  .stats{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:22px}
+  .stat{background:var(--card); border:1px solid var(--rule); border-radius:11px; padding:12px 14px}
+  .stat .k{font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink2)}
+  .stat .n{font-size:22px; margin-top:2px}
+  .stat .n small{font-size:13px; color:var(--ink2)}
+  .stat.hi{border-color:var(--acc); background:var(--acc-soft)}
+  .stat.hi .n{color:var(--acc)}
+  .stat.wide{grid-column:span 2}
+
+  table{width:100%; border-collapse:collapse; font-size:14px}
+  th{font-weight:400; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink2); text-align:right; padding:0 0 8px}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:10px 0; border-top:1px solid var(--rule); text-align:right}
+  tr.tap{cursor:pointer}
+  tr.cur td{color:var(--acc)}
+
+  .sharebtn{width:100%; min-height:64px; font-size:18px; letter-spacing:.06em; text-transform:uppercase;
+    border-radius:12px; border:1px solid var(--rule); background:var(--card); color:var(--ink2); margin-bottom:14px}
+  .sharebtn.on{background:var(--acc); border-color:var(--acc); color:#100E0D}
+  .link{font-size:13px; word-break:break-all; color:var(--ink2); background:var(--card2); border:1px solid var(--rule); border-radius:10px; padding:11px 12px}
+  .link.on{color:var(--ink)}
+
+  .tabbar{position:fixed; left:0; right:0; bottom:0; z-index:10; display:flex; justify-content:center; gap:6px;
+    padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);
+    background:rgba(0,0,0,.92); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+    border-top:1px solid var(--rule)}
+  .tabbar button{flex:1; max-width:120px; min-height:48px; font-size:14px; letter-spacing:.04em;
+    color:var(--ink2); background:none; border:1px solid transparent; border-radius:11px}
+  .tabbar button.on{color:var(--acc); background:var(--acc-soft); border-color:#3A241B}
+
+  .auth{max-width:360px; margin:12vh auto 0; display:flex; flex-direction:column; gap:12px}
+  .auth h1{font-size:26px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px}
+  .authlink{background:none; border:none; padding:2px 0; align-self:flex-start; font-size:13.5px; color:var(--ink2); text-decoration:underline}
+  #toast{position:fixed; left:16px; right:16px; bottom:calc(env(safe-area-inset-bottom) + 84px); z-index:20;
+    background:var(--bad-soft); border:1px solid var(--bad); color:var(--ink); border-radius:11px;
+    padding:12px 14px; font-size:14px; display:none}
+  #toast.ok{background:var(--acc-soft); border-color:var(--acc)}
+  #load{position:fixed; left:0; top:0; height:2px; width:100%; z-index:30; background:var(--acc);
+    transform:scaleX(0); transform-origin:left; transition:transform .25s ease-out; pointer-events:none}
+  #load.on{transform:scaleX(.9)}
+  button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--acc); outline-offset:3px}
+</style>
+
+<div id="app"></div>
+<div id="load"></div>
+<div id="toast"></div>
+
+<script>
+/* One backend: Kostas's personal Supabase project (shared with Ledger's sandbox).
+   The key is publishable. RLS on every ot_* table is the real gate; the only
+   thing anon can reach is the ot_public_report() RPC used by boss.html. */
+const SB_URL='https://dgnxbcoxdpdloplkcmzs.supabase.co';
+const SB_KEY='sb_publishable_kXCrlX-9S1ud3bs9Zdyt1A_9n-U1X1F';
+const SESS_KEY='overtime_session';
+
+/* ---------- utils ---------- */
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONF=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const KINDS={overtime:'Overtime', absence:'Absence', bonus:'Bonus'};
+function el(tag, props, ...kids){
+  const n=document.createElement(tag);
+  if(props) for(const k in props){
+    if(k==='class') n.className=props[k];
+    else if(k.slice(0,2)==='on') n[k]=props[k];
+    else if(k==='hidden'||k==='disabled'||k==='value'||k==='checked') n[k]=props[k];
+    else n.setAttribute(k, props[k]);
+  }
+  kids.flat().forEach(c=>{ if(c!=null && c!==false) n.appendChild(typeof c==='string'||typeof c==='number'?document.createTextNode(String(c)):c); });
+  return n;
+}
+function key(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function parseKey(s){ const p=s.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function todayD(){ const t=new Date(); t.setHours(0,0,0,0); return t; }
+function monthKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function monthStart(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+function monthEnd(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0); }
+function addMonths(d,n){ return new Date(d.getFullYear(), d.getMonth()+n, 1); }
+function dmy(s){ const p=s.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
+function hm(min){ min=Math.round(min); const h=Math.floor(min/60), m=min%60;
+  return h&&m ? h+'h '+m+'m' : h ? h+'h' : m+'m'; }
+function hours(min){ const h=Math.round(min/60*100)/100; return String(h); }
+function eur(x){ return '€'+(Math.round((+x||0)*100)/100).toLocaleString('el-GR',{minimumFractionDigits:2, maximumFractionDigits:2}); }
+function toast(m, ok){ const t=document.getElementById('toast'); t.textContent=m; t.className=ok?'ok':''; t.style.display='block';
+  clearTimeout(toast._x); toast._x=setTimeout(()=>t.style.display='none', ok?2200:4000); }
+let busyN=0;
+function busy(on){ busyN=Math.max(0, busyN+(on?1:-1)); document.getElementById('load').classList.toggle('on', busyN>0); }
+function randToken(){ const b=new Uint8Array(12); crypto.getRandomValues(b); return Array.from(b,x=>x.toString(16).padStart(2,'0')).join(''); }
+
+/* ---------- Greek public holidays (for "workable days") ---------- */
+function orthodoxEaster(y){           // Meeus, Julian calendar + 13 days (valid 1900–2099)
+  const a=y%4, b=y%7, c=y%19, d=(19*c+15)%30, e=(2*a+4*b-d+34)%7;
+  const mo=Math.floor((d+e+114)/31), da=((d+e+114)%31)+1;
+  return addDays(new Date(y, mo-1, da), 13);
+}
+const HOL={};
+function holidays(y){
+  if(HOL[y]) return HOL[y];
+  const s=new Set(['01-01','01-06','03-25','05-01','08-15','10-28','12-25','12-26'].map(x=>y+'-'+x));
+  const E=orthodoxEaster(y);
+  [-48,-2,1,50].forEach(n=>s.add(key(addDays(E,n))));  // Clean Mon, Good Fri, Easter Mon, Holy Spirit Mon
+  return HOL[y]=s;
+}
+function workdays(m){
+  let n=0; const end=monthEnd(m);
+  for(let d=new Date(m); d<=end; d=addDays(d,1)){
+    const w=d.getDay(); if(w&&w<6&&!holidays(d.getFullYear()).has(key(d))) n++;
+  }
+  return n;
+}
+
+/* ---------- auth + api ---------- */
+function sess(){ try{ return JSON.parse(localStorage.getItem(SESS_KEY)||'null'); }catch(e){ return null; } }
+function setSess(s){ try{ if(s) localStorage.setItem(SESS_KEY, JSON.stringify(s)); else localStorage.removeItem(SESS_KEY); }catch(e){} }
+async function authReq(path, body, method, token){
+  const h={apikey:SB_KEY,'Content-Type':'application/json'}; if(token) h.Authorization='Bearer '+token;
+  const r=await fetch(SB_URL+'/auth/v1/'+path,{method:method||'POST', headers:h, body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(d.msg||d.error_description||d.message||('Auth error '+r.status));
+  return d;
+}
+function recoveryFromHash(){
+  const p=new URLSearchParams(location.hash.replace(/^#/,''));
+  if(p.get('type')!=='recovery' || !p.get('access_token')) return null;
+  return {access_token:p.get('access_token'), refresh_token:p.get('refresh_token'), expires_in:+p.get('expires_in')||3600, token_type:'bearer'};
+}
+let refreshing=null;
+function refreshSession(){
+  if(refreshing) return refreshing;
+  refreshing=(async()=>{
+    try{ const s=sess(); if(!s||!s.refresh_token) throw new Error('signed out');
+      const d=await authReq('token?grant_type=refresh_token',{refresh_token:s.refresh_token}); setSess(d); return d; }
+    finally{ refreshing=null; }
+  })();
+  return refreshing;
+}
+async function api(path, opts, retry){
+  opts=opts||{}; if(retry===undefined) retry=true;
+  const s=sess(); if(!s) throw new Error('signed out');
+  const r=await fetch(SB_URL+'/rest/v1/'+path,{
+    method:opts.method||'GET',
+    headers:Object.assign({apikey:SB_KEY, Authorization:'Bearer '+s.access_token, 'Content-Type':'application/json'}, opts.headers||{}),
+    body:opts.body!==undefined?JSON.stringify(opts.body):undefined
+  });
+  if(r.status===401 && retry){ try{ await refreshSession(); }catch(e){ setSess(null); boot(); throw e; } return api(path,opts,false); }
+  if(!r.ok){ const t=await r.text(); throw new Error('DB '+r.status+': '+t.slice(0,160)); }
+  if(r.status===204) return [];
+  const txt=await r.text(); return txt?JSON.parse(txt):[];
+}
+const REP={headers:{Prefer:'return=representation'}};
+
+/* ---------- state + data ---------- */
+/* Everything is small (a few hundred rows a year), so it's all loaded once at
+   boot and every calculation runs in memory. Mutate S, then render(). */
+const S={view:'log', month:monthStart(todayD()), entries:[], periods:[], share:null, edit:null};
+
+async function loadAll(){
+  const [e,p,s]=await Promise.all([
+    api('ot_entries?select=*&order=date.desc,created_at.desc'),
+    api('ot_pay_periods?select=*&order=effective_from.asc'),
+    api('ot_share?select=*')
+  ]);
+  S.entries=e; S.periods=p;
+  S.share=s[0] || (await api('ot_share',{method:'POST', body:{}, headers:REP.headers}))[0];
+}
+function sortEntries(){ S.entries.sort((a,b)=> a.date<b.date?1 : a.date>b.date?-1 : (a.created_at<b.created_at?1:-1)); }
+async function saveEntry(row, id){
+  busy(true);
+  try{
+    if(id){ const r=await api('ot_entries?id=eq.'+id,{method:'PATCH', body:row, headers:REP.headers});
+      S.entries=S.entries.map(x=>x.id===id?r[0]:x); }
+    else { const r=await api('ot_entries',{method:'POST', body:row, headers:REP.headers}); S.entries.push(r[0]); }
+    sortEntries();
+  } finally { busy(false); }
+}
+async function deleteEntry(id){
+  busy(true);
+  try{ await api('ot_entries?id=eq.'+id,{method:'DELETE'}); S.entries=S.entries.filter(x=>x.id!==id); }
+  finally{ busy(false); }
+}
+async function patchShare(patch){
+  busy(true);
+  try{ const r=await api('ot_share?user_id=eq.'+S.share.user_id,{method:'PATCH', body:patch, headers:REP.headers}); S.share=r[0]; }
+  finally{ busy(false); }
+}
+
+/* ---------- pay maths ---------- */
+/* Pay terms apply from effective_from until the next period starts. */
+function periodFor(dateStr){
+  let p=null; for(const x of S.periods) if(x.effective_from<=dateStr) p=x; return p;
+}
+function monthCalc(m){
+  const mk=monthKey(m), p=periodFor(key(monthStart(m)));
+  const rows=S.entries.filter(e=>e.date.slice(0,7)===mk);
+  let ot=0, abs=0, bonus=0, otPay=0; const days=new Set();
+  for(const e of rows){
+    if(e.kind==='overtime'){ ot+=e.minutes; days.add(e.date); const r=periodFor(e.date); otPay+=e.minutes/60*(r?+r.ot_rate:0); }
+    else if(e.kind==='absence') abs+=e.minutes;
+    else if(e.kind==='bonus') bonus+=+e.amount||0;
+  }
+  const bank=p?+p.bank:0, cash=(p?+p.cash_base:0)+otPay+bonus;
+  return {rows, ot, abs, bonus, otPay, otDays:days.size, work:workdays(monthStart(m)), bank, cash, total:bank+cash, hasPay:!!p};
+}
+
+/* ---------- entry form (add + edit) ---------- */
+function entryForm(existing){
+  const t0=todayD();
+  const f=existing ? {kind:existing.kind, date:existing.date, minutes:existing.minutes, amount:existing.amount, note:existing.note||''}
+                   : {kind:'overtime', date:key(t0), minutes:60, amount:'', note:''};
+  const msg=el('p',{class:'msg'});
+  const box=el('div',{class:'form'+(existing?' editing':'')});
+  function draw(){
+    box.innerHTML='';
+    const add=(...n)=>n.forEach(x=>{ if(x) box.appendChild(x); });
+    const date=el('input',{type:'date', value:f.date, max:key(addDays(t0,1)), onchange:e=>{ f.date=e.target.value; draw(); }});
+    const quickDay=(label,d)=>el('button',{class:f.date===key(d)?'on':'', onclick:()=>{ f.date=key(d); draw(); }},label);
+    add(
+      existing ? el('div',{class:'head', style:'margin:0; padding:0; border:0'}, el('h2',null,'Edit entry')) : null,
+      el('div',{class:'seg'}, Object.keys(KINDS).map(k=>el('button',{'aria-pressed':String(f.kind===k),
+        onclick:()=>{ f.kind=k; draw(); }}, KINDS[k]))),
+      el('label',null,'Date', el('div',{class:'daterow'}, date, quickDay('Today',t0), quickDay('Yest.',addDays(t0,-1))))
+    );
+    if(f.kind==='bonus'){
+      add(el('label',null,'Amount (€)',
+        el('input',{type:'number', inputmode:'decimal', step:'0.01', min:'0', placeholder:'0.00', value:f.amount==null?'':String(f.amount),
+          oninput:e=>{ f.amount=e.target.value; }})));
+    } else {
+      const h=Math.floor(f.minutes/60), m=f.minutes%60;
+      const step=(d)=>{ f.minutes=Math.max(0, Math.min(1440, f.minutes+d)); draw(); };
+      add(
+        el('div',{class:'dur'},
+          el('div',{class:'stepper'}, el('span',{class:'k'},'Hours'), el('div',null,
+            el('button',{onclick:()=>step(-60), 'aria-label':'minus hour'},'−'), el('button',{onclick:()=>step(60), 'aria-label':'plus hour'},'+'))),
+          el('div',{class:'val'}, String(h), el('small',null,'h'), String(m).padStart(2,'0'), el('small',null,'m')),
+          el('div',{class:'stepper'}, el('span',{class:'k'},'Minutes'), el('div',null,
+            el('button',{onclick:()=>step(-5), 'aria-label':'minus 5 minutes'},'−'), el('button',{onclick:()=>step(5), 'aria-label':'plus 5 minutes'},'+')))),
+        el('div',{class:'quick'}, [30,45,60,90,120,150,180,240].map(n=>
+          el('button',{class:f.minutes===n?'on':'', onclick:()=>{ f.minutes=n; draw(); }}, hm(n))))
+      );
+    }
+    add(
+      el('label',null,'Note (private)', el('input',{type:'text', value:f.note, placeholder:'Optional', oninput:e=>{ f.note=e.target.value; }})),
+      el('div',{class:'btnrow'},
+        existing ? el('button',{class:'danger', onclick:del},'Delete') : null,
+        existing ? el('button',{onclick:()=>{ S.edit=null; render(); }},'Cancel') : null,
+        el('button',{class:'pri', onclick:save}, existing?'Save':'Log it')),
+      msg);
+  }
+  async function save(){
+    msg.className='msg'; msg.textContent='';
+    if(!f.date){ msg.className='msg err'; msg.textContent='Pick a date.'; return; }
+    const row={kind:f.kind, date:f.date, note:f.note.trim()||null};
+    if(f.kind==='bonus'){
+      const a=parseFloat(String(f.amount).replace(',','.'));
+      if(!(a>=0)){ msg.className='msg err'; msg.textContent='Enter an amount.'; return; }
+      row.amount=a; row.minutes=0;
+    } else {
+      if(f.minutes<=0){ msg.className='msg err'; msg.textContent='Duration must be above zero.'; return; }
+      row.minutes=f.minutes; row.amount=null;
+    }
+    try{
+      await saveEntry(row, existing&&existing.id);
+      toast(existing?'Saved.':'Logged '+(f.kind==='bonus'?eur(row.amount):hm(row.minutes))+' · '+dmy(f.date), true);
+      S.edit=null; render();
+    }catch(e){ msg.className='msg err'; msg.textContent=navigator.onLine===false?'Offline — not saved.':e.message; }
+  }
+  async function del(){
+    if(!del.armed){ del.armed=true; msg.className='msg err'; msg.textContent='Tap Delete again to confirm.'; return; }
+    try{ await deleteEntry(existing.id); toast('Deleted.', true); S.edit=null; render(); }
+    catch(e){ msg.className='msg err'; msg.textContent=e.message; }
+  }
+  draw();
+  return box;
+}
+
+function entryRow(e){
+  const d=parseKey(e.date);
+  const val = e.kind==='bonus' ? eur(e.amount) : hm(e.minutes);
+  const p = e.kind==='overtime' ? periodFor(e.date) : null;
+  return el('div',{class:'row tap', onclick:()=>{ S.edit=e; render(); window.scrollTo(0,0); }},
+    el('div',{class:'d'}, dmy(e.date).slice(0,5), el('small',null,DOW[d.getDay()])),
+    el('div',{class:'name'}, e.kind!=='overtime'?el('span',{class:'tag'},KINDS[e.kind]):null, e.note||''),
+    el('div',{class:'v'}, val, p ? el('small',null, eur(e.minutes/60*p.ot_rate)) : null));
+}
+
+/* ---------- views ---------- */
+function renderLog(){
+  const now=monthStart(todayD()), c=monthCalc(now), prev=monthCalc(addMonths(now,-1));
+  const pm=addMonths(now,-1);
+  return [
+    el('div',{class:'topbar'}, el('h1',null,'Overtime'), S.share&&S.share.enabled ? el('span',{class:'livepill'},'Boss view live') : null),
+    el('div',{class:'status'},
+      el('b',null,MONF[now.getMonth()]), ' · ', el('b',null,hm(c.ot)), ' overtime · ', el('b',null,eur(c.otPay)),
+      el('br'), 'Cash for ', MONF[pm.getMonth()], ': ', el('b',null,eur(prev.cash)), ' · so far this month: ', el('b',null,eur(c.cash))),
+    S.edit ? entryForm(S.edit) : entryForm(null),
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'This month'), el('span',{class:'sub'}, c.rows.length+' entries')),
+      c.rows.length ? c.rows.map(entryRow) : el('div',{class:'empty'},'Nothing logged yet this month.'))
+  ];
+}
+
+function renderMonths(){
+  const m=S.month, c=monthCalc(m), cur=monthStart(todayD());
+  const stat=(k,n,cls)=>el('div',{class:'stat'+(cls?' '+cls:'')}, el('div',{class:'k'},k), el('div',{class:'n'},n));
+  const out=[
+    el('div',{class:'topbar'}, el('h1',null,MON[m.getMonth()]+' '+m.getFullYear()),
+      el('div',{class:'nav'},
+        el('button',{onclick:()=>{ S.month=addMonths(S.month,-1); S.edit=null; render(); }, 'aria-label':'previous month'},'‹'),
+        +m!==+cur ? el('button',{class:'today', onclick:()=>{ S.month=cur; S.edit=null; render(); }},'Now') : null,
+        el('button',{onclick:()=>{ S.month=addMonths(S.month,1); S.edit=null; render(); }, 'aria-label':'next month'},'›'))),
+    S.edit ? entryForm(S.edit) : null,
+    el('div',{class:'stats'},
+      stat('Overtime', hm(c.ot), 'hi'),
+      stat('OT pay', eur(c.otPay), 'hi'),
+      stat('OT days', el('span',null, String(c.otDays), el('small',null,' / '+c.work+' workdays'))),
+      stat('Bonus', eur(c.bonus)),
+      c.abs ? stat('Absence', hm(c.abs)) : null,
+      stat('Bank', eur(c.bank)),
+      stat('Cash owed', eur(c.cash), 'hi'),
+      stat('Total', eur(c.total), 'wide')),
+    c.hasPay ? null : el('p',{class:'mut'},'No pay period covers this month — add one in Settings.'),
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'Entries'), el('span',{class:'sub'}, c.rows.length)),
+      c.rows.length ? c.rows.map(entryRow) : el('div',{class:'empty'},'No entries.'))
+  ];
+  out.push(yearTable(m.getFullYear()));
+  return out;
+}
+
+function yearTable(y){
+  const months=[]; for(let i=0;i<12;i++){ const d=new Date(y,i,1); const c=monthCalc(d); if(c.rows.length) months.push([d,c]); }
+  if(!months.length) return null;
+  const qs={}; months.forEach(([d,c])=>{ const q=Math.floor(d.getMonth()/3)+1; (qs[q]=qs[q]||{n:0,ot:0,pay:0}); qs[q].n++; qs[q].ot+=c.ot; qs[q].pay+=c.otPay; });
+  const tot=months.reduce((a,[,c])=>({ot:a.ot+c.ot, pay:a.pay+c.otPay, cash:a.cash+c.cash}),{ot:0,pay:0,cash:0});
+  return el('section',null,
+    el('div',{class:'head'}, el('h2',null,String(y)), el('span',{class:'sub'}, hm(tot.ot)+' · '+eur(tot.pay))),
+    el('table',null,
+      el('tr',null, el('th',null,'Month'), el('th',null,'OT'), el('th',null,'OT pay'), el('th',null,'Cash')),
+      months.map(([d,c])=>el('tr',{class:'tap'+(+d===+S.month?' cur':''), onclick:()=>{ S.month=d; S.edit=null; render(); window.scrollTo(0,0); }},
+        el('td',null,MON[d.getMonth()]), el('td',null,hours(c.ot)+'h'), el('td',null,eur(c.otPay)), el('td',null,eur(c.cash))))),
+    el('div',{class:'head', style:'margin-top:22px'}, el('h2',null,'Quarters')),
+    el('table',null,
+      el('tr',null, el('th',null,'Quarter'), el('th',null,'Avg / month'), el('th',null,'OT pay')),
+      Object.keys(qs).map(q=>el('tr',null, el('td',null,'Q'+q), el('td',null,hours(qs[q].ot/qs[q].n)+'h'), el('td',null,eur(qs[q].pay))))));
+}
+
+function bossUrl(){ return new URL('boss.html?t='+S.share.token, location.href).href; }
+function renderShare(){
+  const sh=S.share, cur=monthStart(todayD());
+  const presets=[
+    ['This month', key(cur), key(monthEnd(cur))],
+    ['Last month', key(addMonths(cur,-1)), key(monthEnd(addMonths(cur,-1)))],
+    ['This year',  cur.getFullYear()+'-01-01', cur.getFullYear()+'-12-31'],
+    ['Everything', null, null]
+  ];
+  const msg=el('p',{class:'msg'});
+  const run=async(patch, ok)=>{ try{ await patchShare(patch); if(ok) toast(ok,true); render(); }catch(e){ msg.className='msg err'; msg.textContent=e.message; } };
+  const from=el('input',{type:'date', value:sh.date_from||'', onchange:e=>run({date_from:e.target.value||null})});
+  const to=el('input',{type:'date', value:sh.date_to||'', onchange:e=>run({date_to:e.target.value||null})});
+  const title=el('input',{type:'text', value:sh.title, onchange:e=>run({title:e.target.value.trim()||'Υπερωρίες'},'Title saved.')});
+  const shown=S.entries.filter(e=>e.kind==='overtime' && (!sh.date_from||e.date>=sh.date_from) && (!sh.date_to||e.date<=sh.date_to));
+  const shownMin=shown.reduce((a,e)=>a+e.minutes,0);
+  return [
+    el('div',{class:'topbar'}, el('h1',null,'Boss view')),
+    el('button',{class:'sharebtn'+(sh.enabled?' on':''), onclick:()=>run({enabled:!sh.enabled}, sh.enabled?'Boss view is off.':'Boss view is live.')},
+      sh.enabled ? 'Live — tap to turn off' : 'Off — tap to go live'),
+    el('p',{class:'mut'}, 'The link shows dates and overtime hours only — no pay, cash, bonuses, absences or notes. While it’s off, the link shows nothing.'),
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'What it shows'), el('span',{class:'sub'}, new Set(shown.map(e=>e.date)).size+' days · '+hm(shownMin))),
+      el('div',{class:'quick', style:'margin-bottom:12px'}, presets.map(([l,a,b])=>
+        el('button',{class:(sh.date_from||null)===a&&(sh.date_to||null)===b?'on':'', onclick:()=>run({date_from:a, date_to:b})}, l))),
+      el('div',{class:'form'},
+        el('div',{style:'display:flex; gap:8px'}, el('label',{style:'flex:1'},'From',from), el('label',{style:'flex:1'},'To',to)),
+        el('label',null,'Title on the page', title))),
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'Link')),
+      el('div',{class:'link'+(sh.enabled?' on':'')}, bossUrl()),
+      el('div',{class:'btnrow', style:'margin-top:10px'},
+        el('button',{onclick:async()=>{ try{ await navigator.clipboard.writeText(bossUrl()); toast('Link copied.',true); }catch(e){ toast('Copy failed — long-press the link instead.'); } }},'Copy'),
+        el('button',{onclick:()=>window.open(bossUrl(),'_blank')},'Preview'),
+        el('button',{class:'danger', onclick:()=>{ if(confirm('Make a new link? The old one stops working.')) run({token:randToken()},'New link made.'); }},'New link')),
+      msg)
+  ];
+}
+
+function renderSettings(){
+  const msg=el('p',{class:'msg'});
+  const rows=S.periods.slice().reverse();
+  const f={effective_from:key(monthStart(todayD())), bank:'', cash_base:'', ot_rate:''};
+  const last=S.periods[S.periods.length-1]; if(last){ f.bank=last.bank; f.cash_base=last.cash_base; f.ot_rate=(+last.ot_rate).toFixed(4); }
+  const inp=(k,type)=>el('input',{type:type||'number', inputmode:'decimal', step:'0.01', value:String(f[k]), oninput:e=>{ f[k]=e.target.value; }});
+  async function add(){
+    const row={effective_from:f.effective_from, bank:+f.bank||0, cash_base:+f.cash_base||0, ot_rate:+f.ot_rate};
+    if(!row.effective_from||!(row.ot_rate>0)){ msg.className='msg err'; msg.textContent='Need a start date and an OT rate.'; return; }
+    busy(true);
+    try{ await api('ot_pay_periods?on_conflict=user_id,effective_from',{method:'POST', body:row, headers:{Prefer:'return=representation,resolution=merge-duplicates'}});
+      S.periods=await api('ot_pay_periods?select=*&order=effective_from.asc'); toast('Pay period saved.',true); render(); }
+    catch(e){ msg.className='msg err'; msg.textContent=e.message; } finally{ busy(false); }
+  }
+  async function remove(p){
+    if(!confirm('Delete the pay period starting '+dmy(p.effective_from)+'?')) return;
+    busy(true);
+    try{ await api('ot_pay_periods?id=eq.'+p.id,{method:'DELETE'}); S.periods=S.periods.filter(x=>x.id!==p.id); render(); }
+    catch(e){ toast(e.message); } finally{ busy(false); }
+  }
+  function exportCsv(){
+    const lines=[['date','kind','minutes','hours','amount','note','created_at'].join(',')];
+    S.entries.slice().reverse().forEach(e=>lines.push([e.date,e.kind,e.minutes,(e.minutes/60).toFixed(2),e.amount==null?'':e.amount,
+      '"'+String(e.note||'').replace(/"/g,'""')+'"',e.created_at].join(',')));
+    const a=el('a',{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'})), download:'overtime-'+key(todayD())+'.csv'});
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  const dateIn=el('input',{type:'date', value:f.effective_from, onchange:e=>{ f.effective_from=e.target.value; }});
+  return [
+    el('div',{class:'topbar'}, el('h1',null,'Settings')),
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'Pay periods')),
+      el('p',{class:'mut', style:'margin-top:0'},'Each period applies from its start date until the next one. OT pay uses the rate on the day worked; bank and cash base use the period covering the 1st of the month.'),
+      el('table',null,
+        el('tr',null, el('th',null,'From'), el('th',null,'Bank'), el('th',null,'Cash'), el('th',null,'OT/h'), el('th',null,'')),
+        rows.map(p=>el('tr',null, el('td',null,dmy(p.effective_from)), el('td',null,eur(p.bank)), el('td',null,eur(p.cash_base)),
+          el('td',null,eur(p.ot_rate)), el('td',null, el('button',{style:'background:none;border:0;color:var(--ink2);font-size:18px;min-height:36px', onclick:()=>remove(p), 'aria-label':'delete period'},'×'))))),
+      el('div',{class:'form', style:'margin-top:16px'},
+        el('label',null,'New period from', dateIn),
+        el('div',{style:'display:flex; gap:8px'},
+          el('label',{style:'flex:1'},'Bank €',inp('bank')), el('label',{style:'flex:1'},'Cash €',inp('cash_base')), el('label',{style:'flex:1'},'OT €/h',inp('ot_rate'))),
+        el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:add},'Save period')),
+        el('p',{class:'mut', style:'margin:0'},'Same start date as an existing period overwrites it.'),
+        msg)),
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'Backup')),
+      el('div',{class:'btnrow'}, el('button',{onclick:exportCsv},'Export CSV'))),
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'Account'), el('span',{class:'sub'}, (sess()&&sess().user&&sess().user.email)||'')),
+      el('div',{class:'btnrow'}, el('button',{onclick:()=>{ setSess(null); boot(); }},'Sign out')))
+  ];
+}
+
+/* ---------- auth views ---------- */
+function renderAuth(){
+  const app=document.getElementById('app'); app.innerHTML='';
+  let forgot=false;
+  const email=el('input',{type:'email', placeholder:'Email', autocomplete:'username'});
+  const pw=el('input',{type:'password', placeholder:'Password', autocomplete:'current-password'});
+  const msg=el('p',{class:'msg'});
+  async function go(){
+    msg.className='msg'; msg.textContent='Signing in…';
+    try{ setSess(await authReq('token?grant_type=password',{email:email.value.trim(), password:pw.value})); boot(); }
+    catch(e){ msg.textContent=e.message; msg.className='msg err'; }
+  }
+  async function sendReset(){
+    msg.className='msg'; msg.textContent='Sending reset link…';
+    try{ await authReq('recover?redirect_to='+encodeURIComponent(location.origin+location.pathname),{email:email.value.trim()});
+      msg.textContent='Check your email for a reset link.'; }
+    catch(e){ msg.textContent=e.message; msg.className='msg err'; }
+  }
+  function draw2(){
+    app.innerHTML='';
+    app.appendChild(el('div',{class:'auth'},
+      el('h1',null,'Overtime'),
+      el('p',{class:'mut', style:'margin:-6px 0 4px'},'Same account as Ledger.'),
+      email, forgot?null:pw,
+      forgot ? el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:sendReset},'Send reset link'), el('button',{onclick:()=>{ forgot=false; draw2(); }},'Back'))
+             : el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:go},'Sign in')),
+      forgot?null:el('button',{class:'authlink', onclick:()=>{ forgot=true; msg.textContent=''; draw2(); }},'Forgot password?'),
+      msg));
+  }
+  pw.onkeydown=e=>{ if(e.key==='Enter') go(); };
+  draw2();
+}
+function renderResetPassword(rec){
+  const app=document.getElementById('app'); app.innerHTML='';
+  const pw=el('input',{type:'password', placeholder:'New password', autocomplete:'new-password'});
+  const msg=el('p',{class:'msg'});
+  async function go(){
+    if(pw.value.length<6){ msg.textContent='At least 6 characters.'; msg.className='msg err'; return; }
+    try{ await authReq('user',{password:pw.value},'PUT',rec.access_token); history.replaceState(null,'',location.pathname); setSess(rec); boot(); }
+    catch(e){ msg.textContent=e.message; msg.className='msg err'; }
+  }
+  app.appendChild(el('div',{class:'auth'}, el('h1',null,'New password'), pw,
+    el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:go},'Save password')), msg));
+}
+
+/* ---------- shell + boot ---------- */
+const TABS=[['log','Log'],['months','Months'],['share','Boss'],['settings','Settings']];
+function render(){
+  const app=document.getElementById('app');
+  const v=S.view==='months'?renderMonths():S.view==='share'?renderShare():S.view==='settings'?renderSettings():renderLog();
+  app.innerHTML='';
+  v.forEach(n=>{ if(n) app.appendChild(n); });
+  app.appendChild(el('nav',{class:'tabbar'}, TABS.map(([k,l])=>el('button',{class:S.view===k?'on':'',
+    onclick:()=>{ S.view=k; S.edit=null; if(k==='months') S.month=monthStart(todayD()); render(); window.scrollTo(0,0); }}, l))));
+}
+async function boot(){
+  const rec=recoveryFromHash(); if(rec){ renderResetPassword(rec); return; }
+  if(!sess()){ renderAuth(); return; }
+  busy(true);
+  try{ await loadAll(); render(); }
+  catch(e){ if(sess()){ document.getElementById('app').innerHTML=''; document.getElementById('app').appendChild(
+      el('div',{class:'auth'}, el('h1',null,'Overtime'), el('p',{class:'msg err'}, navigator.onLine===false?'Offline.':e.message),
+        el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:boot},'Retry'), el('button',{onclick:()=>{ setSess(null); boot(); }},'Sign out')))); } }
+  finally{ busy(false); }
+}
+/* Coming back to the PWA after hours: refetch so another device's entries show up. */
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && sess() && S.share && !S.edit)
+  loadAll().then(render).catch(()=>{}); });
+boot();
+</script>
