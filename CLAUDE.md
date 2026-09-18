@@ -23,8 +23,10 @@ Supabase project `dgnxbcoxdpdloplkcmzs` — the same personal project as Ledger'
 
 Schema lives in `supabase/schema.sql` (reference copy; it was applied as the migration `overtime_app_schema`). Schema changes: apply via the Supabase MCP (`apply_migration`) and update `supabase/schema.sql` in the same commit.
 
+**Closed beta** runs on the separate project `slejxagvgjoqqkqayiyt` (`ledger-beta`), so testers can never reach the personal data. That project already gates signup: `allowed_emails` (RLS on, no policies, so it is invisible to the API) plus a `before insert on auth.users` trigger `enforce_beta_invite` calling `check_email_allowed()`. To stand the beta up: apply `supabase/schema.sql` there, add tester emails to `allowed_emails`, and deploy a copy of this repo with `SB_URL`/`SB_KEY` pointed at it. Invite someone by inserting their email; revoke by deleting it (existing accounts survive — delete the auth user too).
+
 - `ot_entries` — `date`, `kind` (`overtime` | `absence` | `bonus`), `minutes`, `amount` (bonus only), `note`. A check constraint enforces: bonus ⇒ amount set; otherwise minutes > 0.
-- `ot_pay_periods` — `effective_from`, `bank`, `cash_base`, `ot_rate` (€/h), `payday` (1–28, default 5). A period applies from its date until the next one.
+- `ot_pay_periods` — `effective_from`, `bank`, `cash_base`, `ot_rate` (€/h), `payday` (1–28, default 5), `base_hours` (default 168). A period applies from its date until the next one.
 - `ot_share` — one row per user: `enabled`, `token`, `title`, `date_from`, `date_to`.
 - `ot_public_report(p_token)` — `security definer` RPC, the **only** thing `anon` can reach. Returns `{title, from, to, entries:[{date, minutes}]}` for `kind='overtime'` within the range, or `null` if sharing is off / token wrong.
 
@@ -56,7 +58,10 @@ Mirrors Ledger's conventions:
 - `el(tag, props, ...kids)` is the only DOM helper; views are built with it directly.
 - Global state `S` (`view`, `month`, `entries`, `periods`, `share`, `edit`). All data is loaded once at boot (`loadAll`) — it's a few hundred rows a year — and every calculation runs in memory. Mutate `S`, call `render()`.
 - `api()` wraps `/rest/v1`, retries once on 401 after refreshing the token. Session in `localStorage` under `overtime_session`.
-- Views: `renderLog` (add form + a month-navigable entry list, `S.logMonth`), `renderMonths` (stats, year table, quarters — **no entry list**, issue #8), `renderShare` (boss-view switch, range, link), `renderSettings` (pay periods, guide, CSV export, sign out). Tapping any entry row opens `entryForm(entry)` for edit/delete — the Log tab is the only place that happens, so it has to stay month-navigable.
+- Views: `renderLog` (add form + a month-navigable entry list, `S.logMonth`), `renderMonths` (stats, year table, quarters — **no entry list**, issue #8), `renderReport` (a year of derived stats, `S.reportYear`), `renderShare` (boss-view switch, range, link), `renderSettings` (pay periods, guide, CSV export/import, sign out). Tapping any entry row opens `entryForm(entry)` for edit/delete — the Log tab is the only place that happens, so it has to stay month-navigable.
+- `reportStats(y)` derives everything the Report tab shows in one pass; `premiumFor(m)` compares the OT rate against the plain hourly rate implied by `bank + cash_base` over `base_hours`.
+- CSV import (`parseCsv` → `csvToEntries` → `importEntries`) accepts the app's own export plus Greek-locale spreadsheet exports (BOM, CRLF, `;`, `DD/MM/YYYY`, comma decimals). It always previews before writing and dedupes on date + kind + minutes + amount, so re-importing the same file is a no-op. Writes go in chunks of 100.
+- `renderAuth` has three modes: sign in, invite sign-up, forgot password. The invite trigger's opaque "Database error saving new user" is translated by `authError()` into "That email is not on the invite list yet."
 - `S.draft` holds the add form's in-progress state. It lives on `S` rather than in `entryForm`'s closure so a background refetch can't wipe what you were typing.
 - First-run guide: `SLIDES` + `renderGuide()`, an overlay appended by `render()` when `S.guide != null`. Shown once (`overtime_guide_seen`), re-openable from Settings.
 - Refetches on `visibilitychange` so entries from another device appear when the PWA is reopened.

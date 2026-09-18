@@ -138,6 +138,18 @@
   tr.tap{cursor:pointer}
   tr.cur td{color:var(--acc)}
 
+  /* Report tab: horizontal bars and a single stacked split. */
+  .bars{display:flex; flex-direction:column; gap:10px}
+  .bar{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--ink2)}
+  .bar .lbl{flex:none; width:34px}
+  .bar .track{flex:1; min-width:0; height:8px; background:var(--card2); border-radius:5px; overflow:hidden}
+  .bar .fill{display:block; height:100%; background:var(--kc,var(--acc)); border-radius:5px}
+  .bar .amt{flex:none; min-width:62px; text-align:right; color:var(--ink)}
+  .split{display:flex; height:12px; border-radius:6px; overflow:hidden; background:var(--card2); margin-bottom:12px}
+  .split i{display:block; height:100%}
+  .legend{display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12.5px; color:var(--ink2)}
+  .legend i{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:6px}
+
   .sharebtn{width:100%; min-height:64px; font-size:18px; letter-spacing:.06em; text-transform:uppercase;
     border-radius:12px; border:1px solid var(--rule); background:var(--card); color:var(--ink2); margin-bottom:14px}
   .sharebtn.on{background:var(--acc); border-color:var(--acc); color:#100E0D}
@@ -148,7 +160,8 @@
     padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);
     background:rgba(0,0,0,.92); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
     border-top:1px solid var(--rule)}
-  .tabbar button{flex:1; max-width:120px; min-height:48px; font-size:14px; letter-spacing:.04em;
+  .tabbar button{flex:1 1 0; min-width:0; max-width:120px; min-height:48px; font-size:13.5px; letter-spacing:.02em;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     color:var(--ink2); background:none; border:1px solid transparent; border-radius:11px}
   .tabbar button.on{color:var(--acc); background:var(--acc-soft); border-color:#3A241B}
 
@@ -307,7 +320,7 @@ const REP={headers:{Prefer:'return=representation'}};
 /* S.draft holds the add form's half-typed state. It lives here rather than in
    entryForm's closure so a re-render — a background refetch, a tab switch —
    doesn't throw away what you were in the middle of typing. */
-const S={view:'log', month:monthStart(todayD()), logMonth:null, entries:[], periods:[], share:null, edit:null, draft:null, guide:null};
+const S={view:'log', month:monthStart(todayD()), logMonth:null, reportYear:null, entries:[], periods:[], share:null, edit:null, draft:null, guide:null};
 
 async function loadAll(){
   const [e,p,s]=await Promise.all([
@@ -361,6 +374,40 @@ function periodFor(dateStr){
 /* Day of the month wages land. Falls back to the 5th so the app still behaves
    sensibly for a period saved before payday became editable. */
 function paydayFor(m){ const p=periodFor(key(monthStart(m))); return p&&p.payday!=null ? +p.payday : 5; }
+/* Contracted hours in a month — the denominator for an effective hourly wage.
+   168 = 21 days x 8h, which is exactly how the original OT rate was derived. */
+function baseHoursFor(m){ const p=periodFor(key(monthStart(m))); return p&&p.base_hours!=null ? +p.base_hours : 168; }
+/* What an hour of overtime is worth against an hour of ordinary time. */
+function premiumFor(m){
+  const p=periodFor(key(monthStart(m))); if(!p) return null;
+  const bh=p.base_hours!=null?+p.base_hours:168;
+  const plain=(+p.bank + +p.cash_base)/bh;
+  if(!(plain>0)) return null;
+  return {plain:plain, rate:+p.ot_rate, pct:(+p.ot_rate/plain-1)*100};
+}
+/* Everything the Report tab needs for one year, in a single pass. */
+function reportStats(y){
+  const r={otMin:0, otPay:0, bonus:0, absMin:0, base:0, baseHours:0, otDays:0, workDays:0,
+           months:[], byDow:[0,0,0,0,0,0,0], best:null, quiet:null};
+  for(let i=0;i<12;i++){
+    const d=new Date(y,i,1), c=monthCalc(d);
+    if(!c.rows.length) continue;
+    r.otMin+=c.ot; r.otPay+=c.otPay; r.bonus+=c.bonus; r.absMin+=c.abs;
+    r.otDays+=c.otDays; r.workDays+=c.work;
+    r.base += c.bank + (c.cash - c.otPay - c.bonus);   // bank + cash_base, before extras
+    r.baseHours += baseHoursFor(d);
+    r.months.push({d:d, c:c});
+    if(!r.best  || c.ot>r.best.c.ot ) r.best ={d:d, c:c};
+    if(!r.quiet || c.ot<r.quiet.c.ot) r.quiet={d:d, c:c};
+  }
+  for(const e of S.entries)
+    if(e.kind==='overtime' && +e.date.slice(0,4)===y) r.byDow[parseKey(e.date).getDay()]+=e.minutes;
+  r.totalPay=r.base + r.otPay + r.bonus;
+  r.paidHours=r.baseHours + r.otMin/60 - r.absMin/60;
+  r.effective=r.paidHours>0 ? r.totalPay/r.paidHours : 0;
+  r.otShare=r.totalPay>0 ? (r.otPay+r.bonus)/r.totalPay*100 : 0;
+  return r;
+}
 function monthCalc(m){
   const mk=monthKey(m), p=periodFor(key(monthStart(m)));
   const rows=S.entries.filter(e=>e.date.slice(0,7)===mk);
@@ -544,6 +591,74 @@ function yearTable(y){
       Object.keys(qs).map(q=>el('tr',null, el('td',null,'Q'+q), el('td',null,hours(qs[q].ot/qs[q].n)+'h'), el('td',null,eur(qs[q].pay))))));
 }
 
+function renderReport(){
+  const cur=todayD().getFullYear(), y=S.reportYear||cur, r=reportStats(y);
+  const prem=premiumFor(monthStart(todayD()));
+  const n=r.months.length;
+  const stat=(k,v,cls,ik)=>el('div',{class:'stat'+(cls?' '+cls:'')},
+    el('div',{class:'k'}, ik?icon(ik):null, k), el('div',{class:'n'},v));
+  if(!n) return [
+    el('div',{class:'topbar'}, el('h1',null,'Report')),
+    el('div',{class:'empty'},'Nothing logged in '+y+' yet.')];
+
+  const maxDow=Math.max.apply(null,r.byDow)||1;
+  const maxMon=Math.max.apply(null,r.months.map(m=>m.c.ot))||1;
+  const pct=x=>r.totalPay>0 ? x/r.totalPay*100 : 0;
+
+  return [
+    el('div',{class:'topbar'}, el('h1',null,'Report'),
+      el('div',{class:'nav'},
+        el('button',{onclick:()=>{ S.reportYear=y-1; render(); }, 'aria-label':'previous year'},'‹'),
+        el('span',{class:'sub', style:'padding:0 4px'},String(y)),
+        el('button',{onclick:()=>{ S.reportYear=y+1; render(); }, 'aria-label':'next year'},'›'))),
+
+    el('div',{class:'stats'},
+      stat('Effective wage', el('span',null, eur(r.effective), el('small',null,' /h')), 'hi'),
+      stat('OT premium', prem ? (prem.pct>=0?'+':'')+prem.pct.toFixed(1)+'%' : '—',
+        prem && prem.pct>0 ? 'hi' : null),
+      stat('Overtime', hm(r.otMin), 'k-overtime', 'overtime'),
+      stat('OT pay', eur(r.otPay), 'k-overtime'),
+      stat('OT + bonus share', r.otShare.toFixed(1)+'%'),
+      stat('Avg / month', hm(r.otMin/n)),
+      stat('Days with OT', el('span',null, String(r.otDays), el('small',null,' / '+r.workDays+' workdays'))),
+      stat('Bonus', eur(r.bonus), 'k-bonus'+(r.bonus?' kind':''), 'bonus')),
+
+    prem ? el('p',{class:'mut', style:'margin-top:-10px'},
+      'An ordinary hour is worth '+eur(prem.plain)+' at '+baseHoursFor(monthStart(todayD()))+
+      'h a month; an overtime hour pays '+eur(prem.rate)+'.'+
+      (Math.abs(prem.pct)<0.5 ? ' Overtime is paid at flat time — no premium.' : '')) : null,
+
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'Where the pay comes from'), el('span',{class:'sub'}, eur(r.totalPay))),
+      el('div',{class:'split'},
+        el('i',{style:'width:'+pct(r.base)+'%; background:#3E3E39'}),
+        el('i',{style:'width:'+pct(r.otPay)+'%; background:#D97757'}),
+        el('i',{style:'width:'+pct(r.bonus)+'%; background:#D4A24C'})),
+      el('div',{class:'legend'},
+        el('span',null, el('i',{style:'background:#3E3E39'}),'Base '+eur(r.base)),
+        el('span',null, el('i',{style:'background:#D97757'}),'Overtime '+eur(r.otPay)),
+        el('span',null, el('i',{style:'background:#D4A24C'}),'Bonus '+eur(r.bonus)))),
+
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'Overtime by weekday')),
+      el('div',{class:'bars'}, [1,2,3,4,5,6,0].map(d=>el('div',{class:'bar k-overtime'},
+        el('span',{class:'lbl'},DOW[d]),
+        el('span',{class:'track'}, el('i',{class:'fill', style:'width:'+(r.byDow[d]/maxDow*100)+'%'})),
+        el('span',{class:'amt'}, r.byDow[d]?hm(r.byDow[d]):'—'))))),
+
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'Month by month')),
+      el('div',{class:'bars'}, r.months.map(m=>el('div',{class:'bar k-overtime'},
+        el('span',{class:'lbl'},MON[m.d.getMonth()]),
+        el('span',{class:'track'}, el('i',{class:'fill', style:'width:'+(m.c.ot/maxMon*100)+'%'})),
+        el('span',{class:'amt'}, hm(m.c.ot))))),
+      el('p',{class:'mut', style:'margin-top:14px'},
+        'Busiest was '+MONF[r.best.d.getMonth()]+' at '+hm(r.best.c.ot)+
+        '; quietest '+MONF[r.quiet.d.getMonth()]+' at '+hm(r.quiet.c.ot)+'.'+
+        (r.absMin?' Absence across the year: '+hm(r.absMin)+'.':'')))
+  ];
+}
+
 function bossUrl(){ return new URL('boss.html?t='+S.share.token, location.href).href; }
 function renderShare(){
   const sh=S.share, cur=monthStart(todayD());
@@ -586,14 +701,16 @@ function renderShare(){
 function renderSettings(){
   const msg=el('p',{class:'msg'});
   const rows=S.periods.slice().reverse();
-  const f={effective_from:key(monthStart(todayD())), bank:'', cash_base:'', ot_rate:'', payday:5};
+  const f={effective_from:key(monthStart(todayD())), bank:'', cash_base:'', ot_rate:'', payday:5, base_hours:168};
   const last=S.periods[S.periods.length-1];
   if(last){ f.bank=last.bank; f.cash_base=last.cash_base; f.ot_rate=(+last.ot_rate).toFixed(4);
-    if(last.payday!=null) f.payday=+last.payday; }
+    if(last.payday!=null) f.payday=+last.payday;
+    if(last.base_hours!=null) f.base_hours=+last.base_hours; }
   const inp=(k,type)=>el('input',{type:type||'number', inputmode:'decimal', step:'0.01', value:String(f[k]), oninput:e=>{ f[k]=e.target.value; }});
   async function add(){
     const row={effective_from:f.effective_from, bank:+f.bank||0, cash_base:+f.cash_base||0, ot_rate:+f.ot_rate,
-      payday:Math.min(28, Math.max(1, Math.round(+f.payday)||5))};
+      payday:Math.min(28, Math.max(1, Math.round(+f.payday)||5)),
+      base_hours:Math.min(400, Math.max(1, Math.round(+f.base_hours)||168))};
     if(!row.effective_from||!(row.ot_rate>0)){ msg.className='msg err'; msg.textContent='Need a start date and an OT rate.'; return; }
     busy(true);
     try{ await api('ot_pay_periods?on_conflict=user_id,effective_from',{method:'POST', body:row, headers:{Prefer:'return=representation,resolution=merge-duplicates'}});
@@ -616,9 +733,70 @@ function renderSettings(){
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url), 10000);
   }
+  /* Export + import. Redraws itself in place rather than calling render(), so
+     picking a file and reviewing the preview never loses the parsed result. */
+  function backupBox(){
+    const box=el('div'); const imsg=el('p',{class:'msg'});
+    let pending=null, busyNow=false;
+    const mini=(k,v,cls)=>el('div',{class:'stat'+(cls?' '+cls:'')}, el('div',{class:'k'},k), el('div',{class:'n'},v));
+    function pick(file){
+      const rd=new FileReader();
+      rd.onerror=()=>{ imsg.className='msg err'; imsg.textContent='Could not read that file.'; };
+      rd.onload=()=>{
+        try{ pending=csvToEntries(String(rd.result||'')); pending.name=file.name; imsg.textContent=''; imsg.className='msg'; }
+        catch(err){ pending=null; imsg.className='msg err'; imsg.textContent='That file is not readable CSV.'; }
+        draw();
+      };
+      rd.readAsText(file);
+    }
+    async function go(){
+      if(busyNow||!pending||!pending.rows.length) return;
+      busyNow=true; busy(true); imsg.className='msg'; imsg.textContent='Importing…';
+      try{
+        const n=await importEntries(pending.rows);
+        pending=null; toast('Imported '+n+' entries.', true); render();
+      }catch(e){ imsg.className='msg err'; imsg.textContent=e.message; busyNow=false; busy(false); draw(); return; }
+      busyNow=false; busy(false);
+    }
+    function draw(){
+      box.innerHTML='';
+      const input=el('input',{type:'file', accept:'.csv,text/csv,text/plain', style:'display:none',
+        onchange:e=>{ const fl=e.target.files&&e.target.files[0]; if(fl) pick(fl); e.target.value=''; }});
+      box.appendChild(input);
+      box.appendChild(el('div',{class:'btnrow'},
+        el('button',{onclick:exportCsv},'Export CSV'),
+        el('button',{onclick:()=>input.click()},'Import CSV')));
+      if(pending){
+        const p=pending;
+        box.appendChild(el('div',{class:'form', style:'margin-top:12px'},
+          el('div',{class:'head', style:'margin:0 0 10px; padding:0; border:0'},
+            el('h2',null,'Ready to import'), el('span',{class:'sub'}, p.name)),
+          el('div',{class:'stats', style:'margin:0'},
+            mini('New', String(p.rows.length), p.rows.length?'hi':null),
+            mini('Already there', String(p.dupes)),
+            p.skipped.length ? mini('Skipped', String(p.skipped.length), 'k-absence kind') : null),
+          p.skipped.length ? el('div',null,
+            el('p',{class:'mut', style:'margin:0 0 6px'},'Skipped rows:'),
+            el('ul',{class:'mut', style:'margin:0; padding-left:18px'},
+              p.skipped.slice(0,5).map(s=>el('li',null,'Line '+s.line+' — '+s.why)),
+              p.skipped.length>5 ? el('li',null,'…and '+(p.skipped.length-5)+' more') : null)) : null,
+          el('p',{class:'mut', style:'margin:0'},
+            p.rows.length ? 'Rows already in the app are matched on date, kind, duration and amount, so importing the same file twice is safe.'
+                          : 'Nothing new to add from this file.'),
+          el('div',{class:'btnrow'},
+            el('button',{onclick:()=>{ pending=null; imsg.textContent=''; draw(); }},'Cancel'),
+            p.rows.length ? el('button',{class:'pri', onclick:go},'Import '+p.rows.length) : null)));
+      }
+      box.appendChild(imsg);
+    }
+    draw();
+    return box;
+  }
   const dateIn=el('input',{type:'date', value:f.effective_from, onchange:e=>{ f.effective_from=e.target.value; }});
   const paydayIn=el('input',{type:'number', inputmode:'numeric', step:'1', min:'1', max:'28',
     value:String(f.payday), oninput:e=>{ f.payday=e.target.value; }});
+  const baseHoursIn=el('input',{type:'number', inputmode:'numeric', step:'1', min:'1', max:'400',
+    value:String(f.base_hours), oninput:e=>{ f.base_hours=e.target.value; }});
   return [
     el('div',{class:'topbar'}, el('h1',null,'Settings')),
     el('section',null,
@@ -634,6 +812,7 @@ function renderSettings(){
         el('div',{style:'display:flex; gap:8px'},
           el('label',{style:'flex:2'},'New period from', dateIn),
           el('label',{style:'flex:1'},'Payday', paydayIn)),
+        el('label',null,'Contracted hours a month', baseHoursIn),
         el('div',{style:'display:flex; gap:8px'},
           el('label',{style:'flex:1'},'Bank €',inp('bank')), el('label',{style:'flex:1'},'Cash €',inp('cash_base')), el('label',{style:'flex:1'},'OT €/h',inp('ot_rate'))),
         el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:add},'Save period')),
@@ -644,11 +823,84 @@ function renderSettings(){
       el('div',{class:'btnrow'}, el('button',{onclick:()=>{ S.guide=0; render(); }},'How this app works'))),
     el('section',null,
       el('div',{class:'head'}, el('h2',null,'Backup')),
-      el('div',{class:'btnrow'}, el('button',{onclick:exportCsv},'Export CSV'))),
+      backupBox()),
     el('section',null,
       el('div',{class:'head'}, el('h2',null,'Account'), el('span',{class:'sub'}, (sess()&&sess().user&&sess().user.email)||'')),
       el('div',{class:'btnrow'}, el('button',{onclick:()=>{ setSess(null); boot(); }},'Sign out')))
   ];
+}
+
+/* ---------- CSV import ---------- */
+/* Reads this app's own export and Greek-locale spreadsheet exports: BOM, CRLF,
+   ';' delimiter, DD/MM/YYYY dates and comma decimals all survive. */
+function parseCsv(text){
+  text=text.replace(/^﻿/,'');
+  const first=(text.split(/\r?\n/)[0]||'');
+  const semi=(first.match(/;/g)||[]).length, comma=(first.match(/,/g)||[]).length;
+  const D=semi>comma?';':',';
+  const rows=[]; let cur=[], val='', q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){ val+='"'; i++; } else q=false; } else val+=ch; }
+    else if(ch==='"') q=true;
+    else if(ch===D){ cur.push(val); val=''; }
+    else if(ch==='\n'){ cur.push(val); rows.push(cur); cur=[]; val=''; }
+    else if(ch!=='\r') val+=ch;
+  }
+  if(val!==''||cur.length){ cur.push(val); rows.push(cur); }
+  return rows.filter(r=>r.some(c=>String(c).trim()!==''));
+}
+function csvDate(s){
+  s=String(s||'').trim();
+  let m=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if(m) return m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');
+  m=/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/.exec(s);          // DD/MM/YYYY
+  if(m) return m[3]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0');
+  return null;
+}
+function csvNum(s){ const n=parseFloat(String(s==null?'':s).replace(/\s/g,'').replace(',','.')); return isNaN(n)?null:n; }
+/* -> {rows:[entry], skipped:[{line,why}], dupes:n} */
+function csvToEntries(text){
+  const raw=parseCsv(text);
+  if(!raw.length) return {rows:[], skipped:[], dupes:0};
+  const head=raw[0].map(h=>String(h).trim().toLowerCase().replace(/^"|"$/g,''));
+  const at=n=>head.indexOf(n);
+  const iD=at('date'), iK=at('kind'), iM=at('minutes'), iH=at('hours'), iA=at('amount'), iN=at('note');
+  if(iD<0) return {rows:[], skipped:[{line:1, why:'No "date" column found'}], dupes:0};
+  const seen=new Set(S.entries.map(e=>e.date+'|'+e.kind+'|'+e.minutes+'|'+(e.amount==null?'':(+e.amount).toFixed(2))));
+  const rows=[], skipped=[]; let dupes=0;
+  for(let i=1;i<raw.length;i++){
+    const c=raw[i], date=csvDate(c[iD]);
+    if(!date){ skipped.push({line:i+1, why:'Unreadable date "'+String(c[iD]||'').trim()+'"'}); continue; }
+    let kind=iK>=0 ? String(c[iK]||'').trim().toLowerCase() : 'overtime';
+    if(!KINDS[kind]) kind='overtime';
+    let minutes=iM>=0 ? csvNum(c[iM]) : null;
+    if(minutes==null && iH>=0){ const h=csvNum(c[iH]); if(h!=null) minutes=Math.round(h*60); }
+    minutes=minutes==null?0:Math.round(minutes);
+    const amount=iA>=0 ? csvNum(c[iA]) : null;
+    const note=iN>=0 ? String(c[iN]||'').trim() : '';
+    if(kind==='bonus'){
+      if(amount==null){ skipped.push({line:i+1, why:'Bonus with no amount'}); continue; }
+      minutes=0;
+    } else if(!(minutes>0)){ skipped.push({line:i+1, why:'Duration must be above zero'}); continue; }
+    if(minutes>1440){ skipped.push({line:i+1, why:'Over 24 hours'}); continue; }
+    const k=date+'|'+kind+'|'+minutes+'|'+(kind==='bonus'?(+amount).toFixed(2):'');
+    if(seen.has(k)){ dupes++; continue; }
+    seen.add(k);
+    rows.push({date:date, kind:kind, minutes:minutes, amount:kind==='bonus'?amount:null, note:note||null});
+  }
+  return {rows:rows, skipped:skipped, dupes:dupes};
+}
+async function importEntries(rows){
+  /* Chunked so one rejected row can't cost the whole file. */
+  let done=0;
+  for(let i=0;i<rows.length;i+=100){
+    const part=rows.slice(i,i+100);
+    const saved=await api('ot_entries',{method:'POST', body:part, headers:REP.headers});
+    saved.forEach(r=>S.entries.push(r)); done+=saved.length;
+  }
+  sortEntries();
+  return done;
 }
 
 /* ---------- first-run guide (#5) + install hint (#3) ---------- */
@@ -699,33 +951,64 @@ function installHint(){
 /* ---------- auth views ---------- */
 function renderAuth(){
   const app=document.getElementById('app'); app.innerHTML='';
-  let forgot=false;
+  let mode='in';   // 'in' | 'up' | 'forgot'
   const email=el('input',{type:'email', placeholder:'Email', autocomplete:'username'});
   const pw=el('input',{type:'password', placeholder:'Password', autocomplete:'current-password'});
   const msg=el('p',{class:'msg'});
+  /* The invite trigger on auth.users raises not_invited, which Supabase relays
+     as an opaque "Database error saving new user". Say what actually happened. */
+  function authError(e){
+    const t=String(e&&e.message||'');
+    if(/not_invited|Database error saving new user/i.test(t))
+      return 'That email is not on the invite list yet.';
+    if(/already registered|already been registered/i.test(t))
+      return 'That email already has an account — sign in instead.';
+    return t;
+  }
   async function go(){
     msg.className='msg'; msg.textContent='Signing in…';
     try{ setSess(await authReq('token?grant_type=password',{email:email.value.trim(), password:pw.value})); boot(); }
-    catch(e){ msg.textContent=e.message; msg.className='msg err'; }
+    catch(e){ msg.textContent=authError(e); msg.className='msg err'; }
+  }
+  async function signUp(){
+    const addr=email.value.trim();
+    if(!addr){ msg.className='msg err'; msg.textContent='Enter your email.'; return; }
+    if(pw.value.length<6){ msg.className='msg err'; msg.textContent='Password needs at least 6 characters.'; return; }
+    msg.className='msg'; msg.textContent='Creating your account…';
+    try{
+      const d=await authReq('signup',{email:addr, password:pw.value});
+      if(d&&d.access_token){ setSess(d); boot(); return; }
+      msg.textContent='Account made. Check your email to confirm, then sign in.';
+    }catch(e){ msg.textContent=authError(e); msg.className='msg err'; }
   }
   async function sendReset(){
     msg.className='msg'; msg.textContent='Sending reset link…';
     try{ await authReq('recover?redirect_to='+encodeURIComponent(location.origin+location.pathname),{email:email.value.trim()});
       msg.textContent='Check your email for a reset link.'; }
-    catch(e){ msg.textContent=e.message; msg.className='msg err'; }
+    catch(e){ msg.textContent=authError(e); msg.className='msg err'; }
   }
+  function to(m){ mode=m; msg.textContent=''; msg.className='msg'; draw2(); }
   function draw2(){
     app.innerHTML='';
+    pw.setAttribute('autocomplete', mode==='up'?'new-password':'current-password');
+    pw.setAttribute('placeholder', mode==='up'?'Choose a password':'Password');
     app.appendChild(el('div',{class:'auth'},
       el('h1',null,'Overtime'),
-      el('p',{class:'mut', style:'margin:-6px 0 4px'},'Same account as Ledger.'),
-      email, forgot?null:pw,
-      forgot ? el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:sendReset},'Send reset link'), el('button',{onclick:()=>{ forgot=false; draw2(); }},'Back'))
-             : el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:go},'Sign in')),
-      forgot?null:el('button',{class:'authlink', onclick:()=>{ forgot=true; msg.textContent=''; draw2(); }},'Forgot password?'),
+      el('p',{class:'mut', style:'margin:-6px 0 4px'},
+        mode==='up' ? 'Sign-up is invite only while the app is in beta.' : 'Same account as Ledger.'),
+      email, mode==='forgot'?null:pw,
+      mode==='forgot'
+        ? el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:sendReset},'Send reset link'),
+            el('button',{onclick:()=>to('in')},'Back'))
+        : mode==='up'
+        ? el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:signUp},'Create account'),
+            el('button',{onclick:()=>to('in')},'Back'))
+        : el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:go},'Sign in')),
+      mode==='in' ? el('button',{class:'authlink', onclick:()=>to('forgot')},'Forgot password?') : null,
+      mode==='in' ? el('button',{class:'authlink', onclick:()=>to('up')},'Have an invite? Create an account') : null,
       msg));
   }
-  pw.onkeydown=e=>{ if(e.key==='Enter') go(); };
+  pw.onkeydown=e=>{ if(e.key==='Enter'){ if(mode==='up') signUp(); else if(mode==='in') go(); } };
   draw2();
 }
 function renderResetPassword(rec){
@@ -742,10 +1025,10 @@ function renderResetPassword(rec){
 }
 
 /* ---------- shell + boot ---------- */
-const TABS=[['log','Log'],['months','Months'],['share','Boss'],['settings','Settings']];
+const TABS=[['log','Log'],['months','Months'],['report','Report'],['share','Boss'],['settings','Settings']];
 function render(){
   const app=document.getElementById('app');
-  const v=S.view==='months'?renderMonths():S.view==='share'?renderShare():S.view==='settings'?renderSettings():renderLog();
+  const v=S.view==='months'?renderMonths():S.view==='report'?renderReport():S.view==='share'?renderShare():S.view==='settings'?renderSettings():renderLog();
   app.innerHTML='';
   v.forEach(n=>{ if(n) app.appendChild(n); });
   app.appendChild(el('nav',{class:'tabbar'}, TABS.map(([k,l])=>el('button',{class:S.view===k?'on':'',

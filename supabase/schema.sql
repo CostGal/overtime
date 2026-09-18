@@ -27,6 +27,9 @@ create table public.ot_pay_periods (
   -- Day of the month wages land. The Log summary treats the previous month as
   -- "next to collect" up to and including this day, then switches to this one.
   payday          smallint not null default 5 check (payday between 1 and 28),
+  -- Contracted hours a month. Denominator for the Report tab's effective wage
+  -- and for the plain hourly rate that OT pay is compared against.
+  base_hours      smallint not null default 168 check (base_hours between 1 and 400),
   unique (user_id, effective_from)
 );
 
