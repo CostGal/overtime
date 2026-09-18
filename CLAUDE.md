@@ -24,7 +24,7 @@ Supabase project `dgnxbcoxdpdloplkcmzs` — the same personal project as Ledger'
 Schema lives in `supabase/schema.sql` (reference copy; it was applied as the migration `overtime_app_schema`). Schema changes: apply via the Supabase MCP (`apply_migration`) and update `supabase/schema.sql` in the same commit.
 
 - `ot_entries` — `date`, `kind` (`overtime` | `absence` | `bonus`), `minutes`, `amount` (bonus only), `note`. A check constraint enforces: bonus ⇒ amount set; otherwise minutes > 0.
-- `ot_pay_periods` — `effective_from`, `bank`, `cash_base`, `ot_rate` (€/h). A period applies from its date until the next one.
+- `ot_pay_periods` — `effective_from`, `bank`, `cash_base`, `ot_rate` (€/h), `payday` (1–28, default 5). A period applies from its date until the next one.
 - `ot_share` — one row per user: `enabled`, `token`, `title`, `date_from`, `date_to`.
 - `ot_public_report(p_token)` — `security definer` RPC, the **only** thing `anon` can reach. Returns `{title, from, to, entries:[{date, minutes}]}` for `kind='overtime'` within the range, or `null` if sharing is off / token wrong.
 
@@ -42,6 +42,7 @@ This repo is **public** (required for free GitHub Pages). So:
 
 - OT pay per entry = `minutes / 60 × ot_rate` of the period covering **that entry's date**.
 - Bank and cash base come from the period covering the **1st of the month**.
+- The Log summary shows whichever month is **next to collect**: the previous month up to and including `payday`, this month after it (issues #1, #2).
 - Cash owed for a month = `cash_base + OT pay + bonuses`. Total = `bank + cash owed`.
 - Absences are tracked and shown, but don't change pay (matches the old sheet).
 - Workable days = Mon–Fri minus Greek public holidays (fixed dates + Orthodox-Easter-based Clean Monday, Good Friday, Easter Monday, Holy Spirit Monday — computed, no table).
@@ -55,12 +56,23 @@ Mirrors Ledger's conventions:
 - `el(tag, props, ...kids)` is the only DOM helper; views are built with it directly.
 - Global state `S` (`view`, `month`, `entries`, `periods`, `share`, `edit`). All data is loaded once at boot (`loadAll`) — it's a few hundred rows a year — and every calculation runs in memory. Mutate `S`, call `render()`.
 - `api()` wraps `/rest/v1`, retries once on 401 after refreshing the token. Session in `localStorage` under `overtime_session`.
-- Views: `renderLog` (default: add form + this month), `renderMonths` (month stats, entries, year table, quarters), `renderShare` (boss-view switch, range, link), `renderSettings` (pay periods, CSV export, sign out). Tapping any entry row opens `entryForm(entry)` for edit/delete.
+- Views: `renderLog` (add form + a month-navigable entry list, `S.logMonth`), `renderMonths` (stats, year table, quarters — **no entry list**, issue #8), `renderShare` (boss-view switch, range, link), `renderSettings` (pay periods, guide, CSV export, sign out). Tapping any entry row opens `entryForm(entry)` for edit/delete — the Log tab is the only place that happens, so it has to stay month-navigable.
+- `S.draft` holds the add form's in-progress state. It lives on `S` rather than in `entryForm`'s closure so a background refetch can't wipe what you were typing.
+- First-run guide: `SLIDES` + `renderGuide()`, an overlay appended by `render()` when `S.guide != null`. Shown once (`overtime_guide_seen`), re-openable from Settings.
 - Refetches on `visibilitychange` so entries from another device appear when the PWA is reopened.
 
 ## Design invariants
 
-Same visual language as Ledger: black background, `#D97757` the only accent, `#E5484D` only for destructive actions/errors, Futura stack, iOS-first, 44pt+ tap targets, safe-area insets on all edges. Reuse the `:root` variables. `boss.html` is intentionally light (a document for someone else, printable).
+Same visual language as Ledger: black background, Futura stack, iOS-first, 44pt+ tap targets, safe-area insets on all edges. Reuse the `:root` variables. `boss.html` is intentionally light (a document for someone else, printable).
+
+Colour is per **entry kind**, set by a `.k-*` class that defines `--kc` and read by every element inside it (icon, tag, stat card, segmented button):
+
+- overtime `#D97757` (the app accent) · absence `#7FA8C9` · bonus `#D4A24C`
+- `#E5484D` stays reserved for destructive actions and errors — never a kind.
+
+Each kind also has a stroke-only inline SVG in `ICONS`, sized in `em` so it inherits colour and size from its context. This replaced the old "single accent" rule so absence and bonus can't be mistaken for overtime (issues #4, #6, #7).
+
+Flex rows that hold text must set `min-width:0` (and ellipsis the label) — Futura is absent on most non-Apple devices and the wider fallback will otherwise push the page sideways.
 
 ## Icons
 

@@ -58,13 +58,21 @@
   .head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:13px; padding-bottom:9px; border-bottom:1px solid var(--rule)}
   .head h2{font-size:13px; letter-spacing:.16em; color:var(--ink2); text-transform:uppercase}
   .head .sub{font-size:13px; color:var(--ink2)}
+  .head .nav button{width:38px; height:36px; font-size:16px}
+  .head .nav .today{width:auto; padding:0 11px; font-size:13px}
 
   .form{display:flex; flex-direction:column; gap:14px; padding:16px; background:var(--card); border:1px solid var(--rule); border-radius:12px; margin-bottom:16px}
   .form.editing{border-color:var(--acc)}
   .form label{min-width:0; font-size:12.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink2); display:flex; flex-direction:column; gap:6px}
   .seg{display:flex; gap:6px}
-  .seg button{flex:1; min-height:46px; font-size:14.5px; color:var(--ink2); background:var(--card2); border:1px solid var(--rule); border-radius:10px; padding:0 6px}
-  .seg button[aria-pressed="true"]{color:#100E0D; background:var(--acc); border-color:var(--acc)}
+  /* flex:1 1 0 + min-width:0 so the three buttons always share the row and the
+     label ellipsises instead of pushing the page sideways where Futura is
+     missing and a wider fallback font is used. */
+  .seg button{flex:1 1 0; min-width:0; min-height:46px; font-size:14.5px; color:var(--ink2); background:var(--card2); border:1px solid var(--rule); border-radius:10px; padding:0 6px;
+    display:flex; align-items:center; justify-content:center; gap:7px}
+  .seg button .ico{color:inherit; font-size:16px}
+  .seg button .lbl{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .seg button[aria-pressed="true"]{color:#100E0D; background:var(--kc); border-color:var(--kc)}
   .daterow{display:flex; gap:6px}
   .daterow input{flex:1}
   .daterow button{flex:none; min-height:46px; padding:0 12px; font-size:13.5px; color:var(--ink2); background:var(--card2); border:1px solid var(--rule); border-radius:10px}
@@ -95,8 +103,19 @@
   .row .name{flex:1; min-width:0; font-size:14px; color:var(--ink2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .row .v{flex:none; text-align:right; font-size:15.5px}
   .row .v small{display:block; font-size:12px; color:var(--ink2)}
-  .tag{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink2); border:1px solid var(--rule); border-radius:6px; padding:2px 6px; margin-right:6px}
+  .tag{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--kc,var(--ink2)); border:1px solid var(--kc-line,var(--rule)); border-radius:6px; padding:2px 6px; margin-right:6px}
   .empty{padding:18px 0; color:var(--ink2); font-size:14px}
+
+  /* Each kind carries its own hue and mark, so absence and bonus can never be
+     mistaken for overtime at a glance. --kc is set by the .k-* class and read
+     by every element that needs to take the kind's colour. */
+  .k-overtime{--kc:#D97757; --kc-soft:#2B1A14; --kc-line:#3A241B}
+  .k-absence {--kc:#7FA8C9; --kc-soft:#151E26; --kc-line:#25333F}
+  .k-bonus   {--kc:#D4A24C; --kc-soft:#241C0F; --kc-line:#3B2F19}
+  .ico{display:inline-flex; align-items:center; justify-content:center; flex:none; color:var(--kc,var(--ink2))}
+  .ico svg{width:1em; height:1em; display:block}
+  .row .ico{font-size:17px; width:22px}
+  .row.k-absence .v,.row.k-bonus .v{color:var(--kc)}
 
   .stats{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:22px}
   .stat{background:var(--card); border:1px solid var(--rule); border-radius:11px; padding:12px 14px}
@@ -106,11 +125,16 @@
   .stat.hi{border-color:var(--acc); background:var(--acc-soft)}
   .stat.hi .n{color:var(--acc)}
   .stat.wide{grid-column:span 2}
+  .stat.kind{border-color:var(--kc-line); background:var(--kc-soft)}
+  .stat.kind .n{color:var(--kc)}
+  .stat .k{display:flex; align-items:center; gap:6px}
+  .stat .k .ico{font-size:13px}
 
   table{width:100%; border-collapse:collapse; font-size:14px}
   th{font-weight:400; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink2); text-align:right; padding:0 0 8px}
   th:first-child,td:first-child{text-align:left}
   td{padding:10px 0; border-top:1px solid var(--rule); text-align:right}
+  td small{display:block; font-size:11.5px; color:var(--ink2)}
   tr.tap{cursor:pointer}
   tr.cur td{color:var(--acc)}
 
@@ -127,6 +151,25 @@
   .tabbar button{flex:1; max-width:120px; min-height:48px; font-size:14px; letter-spacing:.04em;
     color:var(--ink2); background:none; border:1px solid transparent; border-radius:11px}
   .tabbar button.on{color:var(--acc); background:var(--acc-soft); border-color:#3A241B}
+
+  /* Safari's address bar only goes away once the app is on the Home Screen, so
+     the hint is the fix for #3 rather than anything we can do in CSS. */
+  .hint{display:flex; gap:10px; align-items:flex-start; margin:0 0 16px; padding:12px 14px;
+    background:var(--card); border:1px solid var(--rule); border-left:3px solid var(--acc);
+    border-radius:10px; font-size:13.5px; color:var(--ink2); line-height:1.5}
+  .hint b{color:var(--ink); font-weight:500}
+  .hint button{flex:none; background:none; border:0; color:var(--ink2); font-size:20px; line-height:1; padding:0 2px; min-height:24px}
+
+  .sheet{position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center;
+    padding:calc(env(safe-area-inset-top) + 20px) 18px calc(env(safe-area-inset-bottom) + 20px);
+    background:rgba(0,0,0,.84); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px)}
+  .sheetcard{width:100%; max-width:400px; background:var(--card); border:1px solid var(--rule); border-radius:16px; padding:22px}
+  .sheetcard h2{font-size:20px; letter-spacing:.01em; margin:15px 0 9px; text-transform:none; color:var(--ink)}
+  .sheetcard p{margin:0 0 20px; font-size:15px; color:var(--ink2); line-height:1.55}
+  .sheetcard .ico{font-size:26px}
+  .dots{display:flex; gap:6px; align-items:center}
+  .dots span{width:7px; height:7px; border-radius:50%; background:var(--rule); transition:width .18s, background .18s}
+  .dots span.on{background:var(--acc); width:18px; border-radius:4px}
 
   .auth{max-width:360px; margin:12vh auto 0; display:flex; flex-direction:column; gap:12px}
   .auth h1{font-size:26px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px}
@@ -158,6 +201,14 @@ const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','De
 const MONF=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const KINDS={overtime:'Overtime', absence:'Absence', bonus:'Bonus'};
+/* One mark per kind. Stroke-only and sized in em so they take the colour and
+   size of whatever they sit in. Constant markup — never user input. */
+const ICONS={
+  overtime:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  absence :'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M9 14h6"/></svg>',
+  bonus   :'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l2.6 5.5 6 .9-4.3 4.2 1 6-5.3-2.8-5.3 2.8 1-6L3.4 9.9l6-.9z"/></svg>'
+};
+function icon(kind){ const s=el('span',{class:'ico'}); s.innerHTML=ICONS[kind]||''; return s; }
 function el(tag, props, ...kids){
   const n=document.createElement(tag);
   if(props) for(const k in props){
@@ -256,7 +307,7 @@ const REP={headers:{Prefer:'return=representation'}};
 /* S.draft holds the add form's half-typed state. It lives here rather than in
    entryForm's closure so a re-render — a background refetch, a tab switch —
    doesn't throw away what you were in the middle of typing. */
-const S={view:'log', month:monthStart(todayD()), entries:[], periods:[], share:null, edit:null, draft:null};
+const S={view:'log', month:monthStart(todayD()), logMonth:null, entries:[], periods:[], share:null, edit:null, draft:null, guide:null};
 
 async function loadAll(){
   const [e,p,s]=await Promise.all([
@@ -307,6 +358,9 @@ async function patchShare(patch){
 function periodFor(dateStr){
   let p=null; for(const x of S.periods) if(x.effective_from<=dateStr) p=x; return p;
 }
+/* Day of the month wages land. Falls back to the 5th so the app still behaves
+   sensibly for a period saved before payday became editable. */
+function paydayFor(m){ const p=periodFor(key(monthStart(m))); return p&&p.payday!=null ? +p.payday : 5; }
 function monthCalc(m){
   const mk=monthKey(m), p=periodFor(key(monthStart(m)));
   const rows=S.entries.filter(e=>e.date.slice(0,7)===mk);
@@ -334,8 +388,8 @@ function entryForm(existing){
     const quickDay=(label,d)=>el('button',{class:f.date===key(d)?'on':'', onclick:()=>{ f.date=key(d); draw(); }},label);
     add(
       existing ? el('div',{class:'head', style:'margin:0; padding:0; border:0'}, el('h2',null,'Edit entry')) : null,
-      el('div',{class:'seg'}, Object.keys(KINDS).map(k=>el('button',{'aria-pressed':String(f.kind===k),
-        onclick:()=>{ f.kind=k; draw(); }}, KINDS[k]))),
+      el('div',{class:'seg'}, Object.keys(KINDS).map(k=>el('button',{class:'k-'+k, 'aria-pressed':String(f.kind===k),
+        onclick:()=>{ f.kind=k; draw(); }}, icon(k), el('span',{class:'lbl'},KINDS[k])))),
       el('label',null,'Date', el('div',{class:'daterow'}, date, quickDay('Today',t0), quickDay('Yest.',addDays(t0,-1))))
     );
     if(f.kind==='bonus'){
@@ -396,7 +450,8 @@ function entryRow(e){
   const d=parseKey(e.date);
   const val = e.kind==='bonus' ? eur(e.amount) : hm(e.minutes);
   const p = e.kind==='overtime' ? periodFor(e.date) : null;
-  return el('div',{class:'row tap', onclick:()=>{ S.edit=e; render(); window.scrollTo(0,0); }},
+  return el('div',{class:'row tap k-'+e.kind, onclick:()=>{ S.edit=e; render(); window.scrollTo(0,0); }},
+    icon(e.kind),
     el('div',{class:'d'}, dmy(e.date).slice(0,5), el('small',null,DOW[d.getDay()])),
     el('div',{class:'name'}, e.kind!=='overtime'?el('span',{class:'tag'},KINDS[e.kind]):null, e.note||''),
     el('div',{class:'v'}, val, p ? el('small',null, eur(e.minutes/60*p.ot_rate)) : null));
@@ -404,43 +459,61 @@ function entryRow(e){
 
 /* ---------- views ---------- */
 function renderLog(){
-  const now=monthStart(todayD()), c=monthCalc(now), prev=monthCalc(addMonths(now,-1));
-  const pm=addMonths(now,-1);
+  const t=todayD(), now=monthStart(t), cNow=monthCalc(now), pd=paydayFor(now);
+  /* Up to and including payday you are still waiting on last month's cash; once
+     it has landed, the next packet to collect is this month's. (#1, #2) */
+  const collectM = t.getDate()<=pd ? addMonths(now,-1) : now;
+  const collect=monthCalc(collectM), payOn=addMonths(collectM,1);
+  /* The entry list is month-navigable because Months no longer lists entries (#8),
+     and past entries still have to be editable from somewhere. */
+  const lm=S.logMonth||now, c=monthCalc(lm), isCur=+lm===+now;
+  const go=(d)=>{ S.logMonth=d; S.edit=null; render(); };
   return [
     el('div',{class:'topbar'}, el('h1',null,'Overtime'), S.share&&S.share.enabled ? el('span',{class:'livepill'},'Boss view live') : null),
+    installHint(),
     el('div',{class:'status'},
-      el('b',null,MONF[now.getMonth()]), ' · ', el('b',null,hm(c.ot)), ' overtime · ', el('b',null,eur(c.otPay)),
-      el('br'), 'Cash for ', MONF[pm.getMonth()], ': ', el('b',null,eur(prev.cash)), ' · so far this month: ', el('b',null,eur(c.cash))),
+      el('b',null,MONF[now.getMonth()]), ' · ', el('b',null,hm(cNow.ot)), ' overtime · ', el('b',null,eur(cNow.otPay)),
+      el('br'), 'Next to collect · ', el('b',null,MONF[collectM.getMonth()]), ': ', el('b',null,eur(collect.cash)),
+      ' · payday ', String(pd), ' ', MON[payOn.getMonth()]),
     S.edit ? entryForm(S.edit) : entryForm(null),
     el('section',null,
-      el('div',{class:'head'}, el('h2',null,'This month'), el('span',{class:'sub'}, c.rows.length+' entries')),
-      c.rows.length ? c.rows.map(entryRow) : el('div',{class:'empty'},'Nothing logged yet this month.'))
+      el('div',{class:'head'},
+        el('h2',null, isCur?'This month':MON[lm.getMonth()]+' '+lm.getFullYear()),
+        el('div',{style:'display:flex; align-items:center; gap:10px'},
+          el('span',{class:'sub'}, c.rows.length),
+          el('div',{class:'nav'},
+            el('button',{onclick:()=>go(addMonths(lm,-1)), 'aria-label':'previous month'},'‹'),
+            isCur?null:el('button',{class:'today', onclick:()=>go(now)},'Now'),
+            el('button',{onclick:()=>go(addMonths(lm,1)), 'aria-label':'next month'},'›')))),
+      c.rows.length ? c.rows.map(entryRow)
+        : el('div',{class:'empty'}, isCur?'Nothing logged yet this month.':'No entries in this month.'))
   ];
 }
 
 function renderMonths(){
   const m=S.month, c=monthCalc(m), cur=monthStart(todayD());
-  const stat=(k,n,cls)=>el('div',{class:'stat'+(cls?' '+cls:'')}, el('div',{class:'k'},k), el('div',{class:'n'},n));
+  const stat=(k,n,cls,ik)=>el('div',{class:'stat'+(cls?' '+cls:'')},
+    el('div',{class:'k'}, ik?icon(ik):null, k), el('div',{class:'n'},n));
   const out=[
     el('div',{class:'topbar'}, el('h1',null,MON[m.getMonth()]+' '+m.getFullYear()),
       el('div',{class:'nav'},
         el('button',{onclick:()=>{ S.month=addMonths(S.month,-1); S.edit=null; render(); }, 'aria-label':'previous month'},'‹'),
         +m!==+cur ? el('button',{class:'today', onclick:()=>{ S.month=cur; S.edit=null; render(); }},'Now') : null,
         el('button',{onclick:()=>{ S.month=addMonths(S.month,1); S.edit=null; render(); }, 'aria-label':'next month'},'›'))),
-    S.edit ? entryForm(S.edit) : null,
     el('div',{class:'stats'},
-      stat('Overtime', hm(c.ot), 'hi'),
-      stat('OT pay', eur(c.otPay), 'hi'),
+      stat('Overtime', hm(c.ot), 'hi k-overtime', 'overtime'),
+      stat('OT pay', eur(c.otPay), 'hi k-overtime'),
       stat('OT days', el('span',null, String(c.otDays), el('small',null,' / '+c.work+' workdays'))),
-      stat('Bonus', eur(c.bonus)),
-      c.abs ? stat('Absence', hm(c.abs)) : null,
+      stat('Bonus', eur(c.bonus), 'k-bonus'+(c.bonus?' kind':''), 'bonus'),
+      c.abs ? stat('Absence', hm(c.abs), 'k-absence kind', 'absence') : null,
       stat('Bank', eur(c.bank)),
       stat('Cash owed', eur(c.cash), 'hi'),
       stat('Total', eur(c.total), 'wide')),
     c.hasPay ? null : el('p',{class:'mut'},'No pay period covers this month — add one in Settings.'),
-    el('section',null,
-      el('div',{class:'head'}, el('h2',null,'Entries'), el('span',{class:'sub'}, c.rows.length)),
-      c.rows.length ? c.rows.map(entryRow) : el('div',{class:'empty'},'No entries.'))
+    /* Entries deliberately live only in the Log tab (#8); this tab is the numbers. */
+    el('p',{class:'mut', style:'margin-top:-8px'},
+      c.rows.length ? c.rows.length+' entries this month — view and edit them in the Log tab.'
+                    : 'Nothing logged this month.')
   ];
   out.push(yearTable(m.getFullYear()));
   return out;
@@ -513,11 +586,14 @@ function renderShare(){
 function renderSettings(){
   const msg=el('p',{class:'msg'});
   const rows=S.periods.slice().reverse();
-  const f={effective_from:key(monthStart(todayD())), bank:'', cash_base:'', ot_rate:''};
-  const last=S.periods[S.periods.length-1]; if(last){ f.bank=last.bank; f.cash_base=last.cash_base; f.ot_rate=(+last.ot_rate).toFixed(4); }
+  const f={effective_from:key(monthStart(todayD())), bank:'', cash_base:'', ot_rate:'', payday:5};
+  const last=S.periods[S.periods.length-1];
+  if(last){ f.bank=last.bank; f.cash_base=last.cash_base; f.ot_rate=(+last.ot_rate).toFixed(4);
+    if(last.payday!=null) f.payday=+last.payday; }
   const inp=(k,type)=>el('input',{type:type||'number', inputmode:'decimal', step:'0.01', value:String(f[k]), oninput:e=>{ f[k]=e.target.value; }});
   async function add(){
-    const row={effective_from:f.effective_from, bank:+f.bank||0, cash_base:+f.cash_base||0, ot_rate:+f.ot_rate};
+    const row={effective_from:f.effective_from, bank:+f.bank||0, cash_base:+f.cash_base||0, ot_rate:+f.ot_rate,
+      payday:Math.min(28, Math.max(1, Math.round(+f.payday)||5))};
     if(!row.effective_from||!(row.ot_rate>0)){ msg.className='msg err'; msg.textContent='Need a start date and an OT rate.'; return; }
     busy(true);
     try{ await api('ot_pay_periods?on_conflict=user_id,effective_from',{method:'POST', body:row, headers:{Prefer:'return=representation,resolution=merge-duplicates'}});
@@ -541,22 +617,31 @@ function renderSettings(){
     setTimeout(()=>URL.revokeObjectURL(url), 10000);
   }
   const dateIn=el('input',{type:'date', value:f.effective_from, onchange:e=>{ f.effective_from=e.target.value; }});
+  const paydayIn=el('input',{type:'number', inputmode:'numeric', step:'1', min:'1', max:'28',
+    value:String(f.payday), oninput:e=>{ f.payday=e.target.value; }});
   return [
     el('div',{class:'topbar'}, el('h1',null,'Settings')),
     el('section',null,
       el('div',{class:'head'}, el('h2',null,'Pay periods')),
-      el('p',{class:'mut', style:'margin-top:0'},'Each period applies from its start date until the next one. OT pay uses the rate on the day worked; bank and cash base use the period covering the 1st of the month.'),
+      el('p',{class:'mut', style:'margin-top:0'},'Each period applies from its start date until the next one. OT pay uses the rate on the day worked; bank and cash base use the period covering the 1st of the month. Payday is the day wages land — the Log summary switches to the next month once it passes.'),
       el('table',null,
         el('tr',null, el('th',null,'From'), el('th',null,'Bank'), el('th',null,'Cash'), el('th',null,'OT/h'), el('th',null,'')),
-        rows.map(p=>el('tr',null, el('td',null,dmy(p.effective_from)), el('td',null,eur(p.bank)), el('td',null,eur(p.cash_base)),
+        rows.map(p=>el('tr',null,
+          el('td',null, dmy(p.effective_from), el('small',null,'payday '+(p.payday==null?5:p.payday))),
+          el('td',null,eur(p.bank)), el('td',null,eur(p.cash_base)),
           el('td',null,eur(p.ot_rate)), el('td',null, el('button',{style:'background:none;border:0;color:var(--ink2);font-size:18px;min-height:36px', onclick:()=>remove(p), 'aria-label':'delete period'},'×'))))),
       el('div',{class:'form', style:'margin-top:16px'},
-        el('label',null,'New period from', dateIn),
+        el('div',{style:'display:flex; gap:8px'},
+          el('label',{style:'flex:2'},'New period from', dateIn),
+          el('label',{style:'flex:1'},'Payday', paydayIn)),
         el('div',{style:'display:flex; gap:8px'},
           el('label',{style:'flex:1'},'Bank €',inp('bank')), el('label',{style:'flex:1'},'Cash €',inp('cash_base')), el('label',{style:'flex:1'},'OT €/h',inp('ot_rate'))),
         el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:add},'Save period')),
         el('p',{class:'mut', style:'margin:0'},'Same start date as an existing period overwrites it.'),
         msg)),
+    el('section',null,
+      el('div',{class:'head'}, el('h2',null,'Guide')),
+      el('div',{class:'btnrow'}, el('button',{onclick:()=>{ S.guide=0; render(); }},'How this app works'))),
     el('section',null,
       el('div',{class:'head'}, el('h2',null,'Backup')),
       el('div',{class:'btnrow'}, el('button',{onclick:exportCsv},'Export CSV'))),
@@ -564,6 +649,51 @@ function renderSettings(){
       el('div',{class:'head'}, el('h2',null,'Account'), el('span',{class:'sub'}, (sess()&&sess().user&&sess().user.email)||'')),
       el('div',{class:'btnrow'}, el('button',{onclick:()=>{ setSess(null); boot(); }},'Sign out')))
   ];
+}
+
+/* ---------- first-run guide (#5) + install hint (#3) ---------- */
+const GUIDE_KEY='overtime_guide_seen', HINT_KEY='overtime_install_hint';
+const SLIDES=[
+  {k:'overtime', t:'Log it the day it happens',
+   b:'Tap a duration, hit Log it, done. The app works out what you are owed from the overtime rate in force on that day — no arithmetic, no spreadsheet.'},
+  {k:'absence', t:'Three kinds, three colours',
+   b:'Overtime adds to your pay. Absence is tracked but never changes what you are paid. Bonus is a flat amount. Each carries its own colour and mark so you can tell them apart at a glance.'},
+  {k:'bonus', t:'Everything is editable',
+   b:'Tap any entry in the Log to change or delete it. Use the arrows beside the month name to go back through earlier months.'},
+  {k:null, t:'Months is the numbers',
+   b:'Overtime, OT pay, bank and cash owed for each month, plus a year table and quarter averages. The entries themselves stay in the Log tab.'},
+  {k:null, t:'Pay terms live in Settings',
+   b:'Bank, cash, the overtime rate and your payday. Add a new period whenever your terms change — earlier months keep the rate they were earned under.'},
+  {k:null, t:'The boss view is yours to switch on',
+   b:'It publishes dates and overtime hours only — never pay, bonuses, absences or notes. Switch it off and the link goes dead. New link kills the old one.'}
+];
+function guideSeen(){ try{ return localStorage.getItem(GUIDE_KEY)==='1'; }catch(e){ return true; } }
+function renderGuide(){
+  const i=S.guide, s=SLIDES[i], last=i===SLIDES.length-1;
+  function done(){ try{ localStorage.setItem(GUIDE_KEY,'1'); }catch(e){}
+    S.guide=null; render(); toast('You can open this again from Settings.', true); }
+  function step(n){ S.guide=n; render(); }
+  return el('div',{class:'sheet', role:'dialog', 'aria-modal':'true'},
+    el('div',{class:'sheetcard'+(s.k?' k-'+s.k:'')},
+      el('div',{class:'dots'}, SLIDES.map((_,n)=>el('span',{class:n===i?'on':''}))),
+      s.k?icon(s.k):null,
+      el('h2',null,s.t), el('p',null,s.b),
+      el('div',{class:'btnrow'},
+        i>0 ? el('button',{onclick:()=>step(i-1)},'Back') : el('button',{onclick:done},'Skip'),
+        el('button',{class:'pri', onclick:()=> last?done():step(i+1)}, last?'Done':'Next'))));
+}
+/* iOS only shows the address bar when the app is running as a Safari tab. */
+function installHint(){
+  const ua=navigator.userAgent;
+  const ios=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const standalone=navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
+  if(!ios||standalone) return null;
+  try{ if(localStorage.getItem(HINT_KEY)==='off') return null; }catch(e){}
+  const box=el('div',{class:'hint'},
+    el('div',null,'Safari’s address bar is hiding up there because this is still a browser tab. Tap ',
+      el('b',null,'Share'),' then ',el('b',null,'Add to Home Screen'),' to run it full-screen.'),
+    el('button',{'aria-label':'Dismiss', onclick:()=>{ try{ localStorage.setItem(HINT_KEY,'off'); }catch(e){} box.remove(); }},'×'));
+  return box;
 }
 
 /* ---------- auth views ---------- */
@@ -619,13 +749,17 @@ function render(){
   app.innerHTML='';
   v.forEach(n=>{ if(n) app.appendChild(n); });
   app.appendChild(el('nav',{class:'tabbar'}, TABS.map(([k,l])=>el('button',{class:S.view===k?'on':'',
-    onclick:()=>{ S.view=k; S.edit=null; if(k==='months') S.month=monthStart(todayD()); render(); window.scrollTo(0,0); }}, l))));
+    onclick:()=>{ S.view=k; S.edit=null;
+      if(k==='months') S.month=monthStart(todayD());
+      if(k==='log') S.logMonth=null;
+      render(); window.scrollTo(0,0); }}, l))));
+  if(S.guide!=null) app.appendChild(renderGuide());
 }
 async function boot(){
   const rec=recoveryFromHash(); if(rec){ renderResetPassword(rec); return; }
   if(!sess()){ renderAuth(); return; }
   busy(true);
-  try{ await loadAll(); render(); }
+  try{ await loadAll(); if(!guideSeen()) S.guide=0; render(); }
   catch(e){ if(sess()){ document.getElementById('app').innerHTML=''; document.getElementById('app').appendChild(
       el('div',{class:'auth'}, el('h1',null,'Overtime'), el('p',{class:'msg err'}, navigator.onLine===false?'Offline.':e.message),
         el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:boot},'Retry'), el('button',{onclick:()=>{ setSess(null); boot(); }},'Sign out')))); } }

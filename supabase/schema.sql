@@ -24,6 +24,9 @@ create table public.ot_pay_periods (
   bank            numeric(10,2) not null default 0,
   cash_base       numeric(10,2) not null default 0,
   ot_rate         numeric(12,6) not null,
+  -- Day of the month wages land. The Log summary treats the previous month as
+  -- "next to collect" up to and including this day, then switches to this one.
+  payday          smallint not null default 5 check (payday between 1 and 28),
   unique (user_id, effective_from)
 );
 
