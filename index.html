@@ -253,7 +253,10 @@ const REP={headers:{Prefer:'return=representation'}};
 /* ---------- state + data ---------- */
 /* Everything is small (a few hundred rows a year), so it's all loaded once at
    boot and every calculation runs in memory. Mutate S, then render(). */
-const S={view:'log', month:monthStart(todayD()), entries:[], periods:[], share:null, edit:null};
+/* S.draft holds the add form's half-typed state. It lives here rather than in
+   entryForm's closure so a re-render — a background refetch, a tab switch —
+   doesn't throw away what you were in the middle of typing. */
+const S={view:'log', month:monthStart(todayD()), entries:[], periods:[], share:null, edit:null, draft:null};
 
 async function loadAll(){
   const [e,p,s]=await Promise.all([
@@ -262,15 +265,29 @@ async function loadAll(){
     api('ot_share?select=*')
   ]);
   S.entries=e; S.periods=p;
-  S.share=s[0] || (await api('ot_share',{method:'POST', body:{}, headers:REP.headers}))[0];
+  if(s[0]) S.share=s[0];
+  else{
+    /* First boot for this account. user_id is the primary key, so two devices
+       booting at once means one of these POSTs loses — read the winner's row
+       back rather than dying on the conflict. */
+    try{ S.share=(await api('ot_share',{method:'POST', body:{}, headers:REP.headers}))[0]; }
+    catch(err){ S.share=(await api('ot_share?select=*'))[0]; }
+    if(!S.share) throw new Error('Could not set up the boss view for this account.');
+  }
 }
 function sortEntries(){ S.entries.sort((a,b)=> a.date<b.date?1 : a.date>b.date?-1 : (a.created_at<b.created_at?1:-1)); }
 async function saveEntry(row, id){
   busy(true);
   try{
+    /* PostgREST answers with [] when nothing matched — e.g. the row was deleted on
+       another device. Splicing that undefined into S.entries breaks every later
+       render, so fail loudly instead. */
     if(id){ const r=await api('ot_entries?id=eq.'+id,{method:'PATCH', body:row, headers:REP.headers});
+      if(!r[0]) throw new Error('That entry no longer exists — it may have been deleted on another device.');
       S.entries=S.entries.map(x=>x.id===id?r[0]:x); }
-    else { const r=await api('ot_entries',{method:'POST', body:row, headers:REP.headers}); S.entries.push(r[0]); }
+    else { const r=await api('ot_entries',{method:'POST', body:row, headers:REP.headers});
+      if(!r[0]) throw new Error('Saved nothing — the database returned an empty row.');
+      S.entries.push(r[0]); }
     sortEntries();
   } finally { busy(false); }
 }
@@ -307,7 +324,7 @@ function monthCalc(m){
 function entryForm(existing){
   const t0=todayD();
   const f=existing ? {kind:existing.kind, date:existing.date, minutes:existing.minutes, amount:existing.amount, note:existing.note||''}
-                   : {kind:'overtime', date:key(t0), minutes:60, amount:'', note:''};
+                   : (S.draft = S.draft || {kind:'overtime', date:key(t0), minutes:60, amount:'', note:''});
   const msg=el('p',{class:'msg'});
   const box=el('div',{class:'form'+(existing?' editing':'')});
   function draw(){
@@ -362,6 +379,7 @@ function entryForm(existing){
     try{
       await saveEntry(row, existing&&existing.id);
       toast(existing?'Saved.':'Logged '+(f.kind==='bonus'?eur(row.amount):hm(row.minutes))+' · '+dmy(f.date), true);
+      if(!existing) S.draft=null;          // saved — start the next entry clean
       S.edit=null; render();
     }catch(e){ msg.className='msg err'; msg.textContent=navigator.onLine===false?'Offline — not saved.':e.message; }
   }
@@ -431,7 +449,15 @@ function renderMonths(){
 function yearTable(y){
   const months=[]; for(let i=0;i<12;i++){ const d=new Date(y,i,1); const c=monthCalc(d); if(c.rows.length) months.push([d,c]); }
   if(!months.length) return null;
-  const qs={}; months.forEach(([d,c])=>{ const q=Math.floor(d.getMonth()/3)+1; (qs[q]=qs[q]||{n:0,ot:0,pay:0}); qs[q].n++; qs[q].ot+=c.ot; qs[q].pay+=c.otPay; });
+  const qs={}; months.forEach(([d,c])=>{ const q=Math.floor(d.getMonth()/3)+1; (qs[q]=qs[q]||{n:0,ot:0,pay:0}); qs[q].ot+=c.ot; qs[q].pay+=c.otPay; });
+  /* Average over every month of the quarter that has actually elapsed since logging
+     began — not just the ones with entries, or a quiet month would vanish from the
+     denominator and inflate the average. */
+  const first=months[0][0], cur=monthStart(todayD());
+  Object.keys(qs).forEach(q=>{
+    let n=0; for(let i=(q-1)*3;i<q*3;i++){ const d=new Date(y,i,1); if(+d>=+first && +d<=+cur) n++; }
+    qs[q].n=n||1;
+  });
   const tot=months.reduce((a,[,c])=>({ot:a.ot+c.ot, pay:a.pay+c.otPay, cash:a.cash+c.cash}),{ot:0,pay:0,cash:0});
   return el('section',null,
     el('div',{class:'head'}, el('h2',null,String(y)), el('span',{class:'sub'}, hm(tot.ot)+' · '+eur(tot.pay))),
@@ -508,8 +534,11 @@ function renderSettings(){
     const lines=[['date','kind','minutes','hours','amount','note','created_at'].join(',')];
     S.entries.slice().reverse().forEach(e=>lines.push([e.date,e.kind,e.minutes,(e.minutes/60).toFixed(2),e.amount==null?'':e.amount,
       '"'+String(e.note||'').replace(/"/g,'""')+'"',e.created_at].join(',')));
-    const a=el('a',{href:URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'})), download:'overtime-'+key(todayD())+'.csv'});
+    /* BOM + CRLF: without them Excel reads the Greek notes as mojibake. */
+    const url=URL.createObjectURL(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));
+    const a=el('a',{href:url, download:'overtime-'+key(todayD())+'.csv'});
     document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 10000);
   }
   const dateIn=el('input',{type:'date', value:f.effective_from, onchange:e=>{ f.effective_from=e.target.value; }});
   return [
