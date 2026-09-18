@@ -48,6 +48,8 @@
   .nav .today{width:auto; padding:0 14px; font-size:14px; color:var(--acc)}
   .livepill{font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--acc);
     border:1px solid var(--acc); border-radius:20px; padding:4px 10px; background:var(--acc-soft)}
+  /* Beta build marks itself so it can never be mistaken for the real log. */
+  .livepill.beta{color:#7FA8C9; border-color:#25333F; background:#151E26}
 
   .status{margin:0 0 22px; padding:15px 16px; background:var(--card);
     border:1px solid var(--rule); border-left:3px solid var(--acc);
@@ -205,8 +207,11 @@
 /* One backend: Kostas's personal Supabase project (shared with Ledger's sandbox).
    The key is publishable. RLS on every ot_* table is the real gate; the only
    thing anon can reach is the ot_public_report() RPC used by boss.html. */
+/* --- deployment config: the only lines that differ in the beta repo --- */
 const SB_URL='https://dgnxbcoxdpdloplkcmzs.supabase.co';
 const SB_KEY='sb_publishable_kXCrlX-9S1ud3bs9Zdyt1A_9n-U1X1F';
+const IS_BETA=false;          // the closed-beta deployment sets this true
+/* --------------------------------------------------------------------- */
 const SESS_KEY='overtime_session';
 
 /* ---------- utils ---------- */
@@ -516,7 +521,9 @@ function renderLog(){
   const lm=S.logMonth||now, c=monthCalc(lm), isCur=+lm===+now;
   const go=(d)=>{ S.logMonth=d; S.edit=null; render(); };
   return [
-    el('div',{class:'topbar'}, el('h1',null,'Overtime'), S.share&&S.share.enabled ? el('span',{class:'livepill'},'Boss view live') : null),
+    el('div',{class:'topbar'}, el('h1',null,'Overtime'),
+      IS_BETA ? el('span',{class:'livepill beta'},'Beta')
+              : (S.share&&S.share.enabled ? el('span',{class:'livepill'},'Boss view live') : null)),
     installHint(),
     el('div',{class:'status'},
       el('b',null,MONF[now.getMonth()]), ' · ', el('b',null,hm(cNow.ot)), ' overtime · ', el('b',null,eur(cNow.otPay)),
@@ -995,7 +1002,9 @@ function renderAuth(){
     app.appendChild(el('div',{class:'auth'},
       el('h1',null,'Overtime'),
       el('p',{class:'mut', style:'margin:-6px 0 4px'},
-        mode==='up' ? 'Sign-up is invite only while the app is in beta.' : 'Same account as Ledger.'),
+        mode==='up' ? 'Sign-up is invite only — your email has to be on the list.'
+        : IS_BETA  ? 'Beta. This account is separate from the main app.'
+                   : 'Same account as Ledger.'),
       email, mode==='forgot'?null:pw,
       mode==='forgot'
         ? el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:sendReset},'Send reset link'),
