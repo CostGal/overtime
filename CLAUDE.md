@@ -17,6 +17,27 @@ Verify changes by opening the files in a browser (e.g. `python -m http.server` i
 
 GitHub Pages from `main`, repo root → `https://costgal.github.io/overtime/`. Pushing to `main` deploys (takes ~1 min). All asset URLs must stay **relative** (`manifest.json`, not `/manifest.json`) because the site lives under `/overtime/`.
 
+### Beta and sandbox are separate
+
+**Never copy a change into `overtime-beta` unless Kostas explicitly says to push to the beta.** The two repos carry nearly the same files, which makes "and sync the beta" look like the obvious last step of any piece of work. It isn't. The sandbox is where things get tried; the beta has real testers on it, and a change landing there lands on their data. Finish the work here, say plainly that the beta has *not* been updated, and wait to be asked. The same goes the other way: the two are allowed to drift, and drift is not a bug to fix on sight.
+
+### The shared session
+
+Ledger, Overtime and Kitchen are all served from `costgal.github.io`, so they share one `localStorage`. The session key is derived from the **Supabase project**, not the app name — `costgal_session_<ref>`, with `<ref>` parsed out of `SB_URL` (`SB_REF`). Signing into any one of the three signs you into all three.
+
+Deriving it from `SB_URL` is what keeps the beta safe without a flag anyone has to remember: the beta deploy points at `slejxagvgjoqqkqayiyt` and therefore lands on a different key than the main one at `dgnxbcoxdpdloplkcmzs`, so a tester's session can never be read as the personal one. Copy the repo for a beta and the isolation comes along for free.
+
+`OLD_SESS_KEY` (`overtime_session`) is adopted once on load and then deleted, so the switch to the shared key doesn't sign anybody out. That block can be deleted once every deploy has been opened at least once.
+
+Two consequences in the code, both load-bearing:
+
+- **`rotatedSession`.** Supabase rotates the refresh token on every use, and three apps now share one token. If a sibling refreshes while our request is in flight, ours comes back refused even though a perfectly good session was just minted. So on a refusal — and only a refusal; a network error can't have been a sibling — `refreshSession` waits briefly for the rotated session to appear in `localStorage` and uses that instead of clearing the key. Clearing it here would sign the user out of all three apps at once.
+- **The `storage` listener** (bottom of the file, next to `boot`) picks up a sign-in or sign-out in another app straight away instead of surfacing later as a confusing 401. Token rotation writes the same key, so it only reboots on a real change (signed out, signed in, or a different account), and calls `resetData()` first so the next account can't see a frame of the previous one's entries.
+
+`expiresAt()` reads the access token's own `exp` claim when `expires_at` is missing — Ledger and Kitchen write the shared session without our stamp, and without the fallback every boot after using a sibling would spend the refresh token for nothing.
+
+The Settings tab's `appSwitcher()` and the sign-in screen's "one account for all three" line only appear when the siblings actually sit next door (`SIBLINGS`, i.e. served under `/overtime/`). A beta at a host root gets neither.
+
 ## Backend
 
 Supabase project `dgnxbcoxdpdloplkcmzs` — the same personal project as Ledger's sandbox, so **the login is the same account as Ledger**. Free plan is at its 2-project limit, which is why this app shares it. All tables are prefixed `ot_` so they never collide with Ledger's (`entry_types`, `logs`, `reflections`, `allowed_emails`). Don't touch Ledger's tables.
@@ -57,11 +78,13 @@ Mirrors Ledger's conventions:
 
 - `el(tag, props, ...kids)` is the only DOM helper; views are built with it directly.
 - Global state `S` (`view`, `month`, `entries`, `periods`, `share`, `edit`). All data is loaded once at boot (`loadAll`) — it's a few hundred rows a year — and every calculation runs in memory. Mutate `S`, call `render()`.
-- `api()` wraps `/rest/v1`, retries once on 401 after refreshing the token. Session in `localStorage` under `overtime_session`.
-- Views: `renderLog` (add form + a month-navigable entry list, `S.logMonth`), `renderMonths` (stats, year table, quarters — **no entry list**, issue #8), `renderReport` (a year of derived stats, `S.reportYear`), `renderShare` (boss-view switch, range, link), `renderSettings` (pay periods, guide, CSV export/import, sign out). Tapping any entry row opens `entryForm(entry)` for edit/delete — the Log tab is the only place that happens, so it has to stay month-navigable.
+- `api()` wraps `/rest/v1`, retries once on 401 after refreshing the token. The session lives in `localStorage` under the **shared** key described below.
+- **Signing in is meant to stick.** `setSess` stamps `expires_at`, `ensureFresh()` renews the hour-old access token at boot and on `visibilitychange`, and the session is cleared **only** when the server actually refuses the refresh token (`authRefused` — 400/401/403/422) *and* no sibling app has just rotated it. A network error must never sign anyone out, or a tunnel or a dead Wi-Fi hotspot costs you the session for good. `boot()` also asks for `navigator.storage.persist()`.
+- Views: `renderLog` (add form + a month-navigable entry list, `S.logMonth`), `renderMonths` (stats, year table, quarters — **no entry list**, issue #8), `renderReport` (a year of derived stats, `S.reportYear`), `renderShare` (boss-view switch, range, link), `renderSettings` (pay periods, guide, CSV export/import, sibling-app links, sign out). Tapping any entry row opens `entryForm(entry)` for edit/delete — the Log tab is the only place that happens, so it has to stay month-navigable.
 - `reportStats(y)` derives everything the Report tab shows in one pass; `premiumFor(m)` compares the OT rate against the plain hourly rate implied by `bank + cash_base` over `base_hours`.
 - CSV import (`parseCsv` → `csvToEntries` → `importEntries`) accepts the app's own export plus Greek-locale spreadsheet exports (BOM, CRLF, `;`, `DD/MM/YYYY`, comma decimals). It always previews before writing and dedupes on date + kind + minutes + amount, so re-importing the same file is a no-op. Writes go in chunks of 100.
 - `renderAuth` has three modes: sign in, invite sign-up, forgot password. The invite trigger's opaque "Database error saving new user" is translated by `authError()` into "That email is not on the invite list yet."
+- The auth views are real `<form>`s with `name`/`autocomplete` on the fields and a `type=submit` button — that is the whole reason the iOS keychain offers to save the password and fills it in later; it ignores a bare input with an `onclick` button. So: `preventDefault` in `onsubmit` (a native submit would put the password in the URL), every other button stays `type=button`, and the reset view shows the account's email (decoded from the recovery token by `jwtClaim`) so the keychain updates the existing entry instead of adding a nameless second one.
 - `S.draft` holds the add form's in-progress state. It lives on `S` rather than in `entryForm`'s closure so a background refetch can't wipe what you were typing.
 - First-run guide: `SLIDES` + `renderGuide()`, an overlay appended by `render()` when `S.guide != null`. Shown once (`overtime_guide_seen`), re-openable from Settings.
 - Refetches on `visibilitychange` so entries from another device appear when the PWA is reopened.

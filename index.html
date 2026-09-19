@@ -93,6 +93,10 @@
   .btnrow button{flex:1; min-height:50px; font-size:15px; background:var(--card2); border:1px solid var(--rule); border-radius:11px}
   .btnrow button.pri{background:var(--acc); border-color:var(--acc); color:#100E0D}
   .btnrow button.danger{color:var(--bad); border-color:#4A2325}
+  /* Links to the sibling apps, wearing the secondary button's clothes. */
+  .btnrow a{flex:1; min-height:50px; display:flex; align-items:center; justify-content:center;
+    font-size:15px; background:var(--card2); border:1px solid var(--rule);
+    border-radius:11px; color:var(--ink); text-decoration:none}
   .mut{font-size:13px; color:var(--ink2); line-height:1.5}
   .msg{font-size:13.5px; color:var(--acc); min-height:18px; margin:4px 0 0}
   .msg.err{color:var(--bad)}
@@ -212,7 +216,26 @@ const SB_URL='https://dgnxbcoxdpdloplkcmzs.supabase.co';
 const SB_KEY='sb_publishable_kXCrlX-9S1ud3bs9Zdyt1A_9n-U1X1F';
 const IS_BETA=false;          // the closed-beta deployment sets this true
 /* --------------------------------------------------------------------- */
-const SESS_KEY='overtime_session';
+
+/* ---------- shared session (Ledger · Overtime · Kitchen) ---------- */
+/* All three apps are served from costgal.github.io, so they share one
+   localStorage. The session is keyed by Supabase project rather than by app
+   name: signing into one signs you into all three, and a deploy pointed at a
+   different project — the beta — lands on a different key automatically, so a
+   tester's session can never be read as a sandbox one. Deriving the key from
+   SB_URL is what makes that true in every deploy without a flag to remember.
+   This block is identical in all three repos apart from OLD_SESS_KEY/APP_ID. */
+const SB_REF=(String(SB_URL).match(/\/\/([^.\/]+)\./)||[])[1]||'unknown';
+const SESS_KEY='costgal_session_'+SB_REF;
+const OLD_SESS_KEY='overtime_session';   /* pre-unification; adopted once, below */
+const APP_ID='overtime';
+const APPS=[['ledger','Ledger'],['overtime','Overtime'],['kitchen','Kitchen']];
+/* The siblings are one relative hop away only when this app is served from its
+   own /<name>/ path — true on costgal.github.io, and true locally if you serve
+   the folder that holds all three. A beta deploy sits at a host root, where
+   ../overtime/ doesn't exist, so it gets no switcher and no shared-account copy. */
+const SIBLINGS = location.pathname.indexOf('/'+APP_ID+'/')===0
+  ? APPS.filter(a=>a[0]!==APP_ID) : [];
 
 /* ---------- utils ---------- */
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -281,28 +304,106 @@ function workdays(m){
 
 /* ---------- auth + api ---------- */
 function sess(){ try{ return JSON.parse(localStorage.getItem(SESS_KEY)||'null'); }catch(e){ return null; } }
-function setSess(s){ try{ if(s) localStorage.setItem(SESS_KEY, JSON.stringify(s)); else localStorage.removeItem(SESS_KEY); }catch(e){} }
+/* Stamp our own expiry on the way in: it's what lets the app refresh a minute
+   early instead of discovering the token died halfway through a request. */
+function setSess(s){
+  if(s) s=Object.assign({}, s, {expires_at: Math.floor(Date.now()/1000)+(+s.expires_in||3600)});
+  try{ if(s) localStorage.setItem(SESS_KEY, JSON.stringify(s)); else localStorage.removeItem(SESS_KEY); }catch(e){}
+  return s;
+}
+/* Adopt this app's old per-app session once, so unifying doesn't sign anyone
+   out. Runs before anything reads sess(). */
+try{
+  if(!localStorage.getItem(SESS_KEY)){
+    const old=localStorage.getItem(OLD_SESS_KEY);
+    if(old) localStorage.setItem(SESS_KEY, old);
+  }
+  localStorage.removeItem(OLD_SESS_KEY);
+}catch(e){}
 async function authReq(path, body, method, token){
   const h={apikey:SB_KEY,'Content-Type':'application/json'}; if(token) h.Authorization='Bearer '+token;
   const r=await fetch(SB_URL+'/auth/v1/'+path,{method:method||'POST', headers:h, body:JSON.stringify(body)});
   const d=await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(d.msg||d.error_description||d.message||('Auth error '+r.status));
+  if(!r.ok){ const e=new Error(d.msg||d.error_description||d.message||('Auth error '+r.status)); e.status=r.status; throw e; }
   return d;
+}
+/* Only a refusal from the server means the session is actually dead. Anything
+   else — offline, tunnel, DNS — must leave the tokens alone. */
+function authRefused(e){ const s=e&&e.status; return s===400||s===401||s===403||s===422; }
+/* Reads a claim out of an access token: the recovery link's email (the keychain
+   wants it) and, for a session a sibling app wrote, its expiry. */
+function jwtClaim(t, k){
+  try{ let b=String(t).split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    while(b.length%4) b+='='; return JSON.parse(atob(b))[k]||''; }catch(e){ return ''; }
 }
 function recoveryFromHash(){
   const p=new URLSearchParams(location.hash.replace(/^#/,''));
   if(p.get('type')!=='recovery' || !p.get('access_token')) return null;
   return {access_token:p.get('access_token'), refresh_token:p.get('refresh_token'), expires_in:+p.get('expires_in')||3600, token_type:'bearer'};
 }
+/* Wait for a sibling app's refresh to land in localStorage. Supabase rotates
+   the refresh token on every use, so with three apps on one token the second
+   one to refresh gets invalid_grant back — even though the first has just
+   minted a perfectly good session. Their write may not have happened yet when
+   our failure arrives, so this waits briefly rather than looking once. */
+function rotatedSession(spent, ms){
+  return new Promise(done=>{
+    const end=Date.now()+ms; let timer=null;
+    const fresh=()=>{ const s=sess(); return (s && s.refresh_token && s.refresh_token!==spent) ? s : null; };
+    function onStore(e){ if(e.key && e.key!==SESS_KEY) return; const s=fresh(); if(s) finish(s); }
+    function finish(v){ clearTimeout(timer); window.removeEventListener('storage', onStore); done(v); }
+    /* The storage event is the real signal — it arrives the moment the sibling
+       writes, even in a background tab, where setTimeout gets throttled to
+       seconds and would otherwise eat the whole budget in one tick. The poll
+       is only a backstop. */
+    window.addEventListener('storage', onStore);
+    (function look(){
+      const s=fresh(); if(s) return finish(s);
+      if(Date.now()>=end) return finish(null);
+      timer=setTimeout(look, 120);
+    })();
+  });
+}
 let refreshing=null;
 function refreshSession(){
   if(refreshing) return refreshing;
   refreshing=(async()=>{
-    try{ const s=sess(); if(!s||!s.refresh_token) throw new Error('signed out');
-      const d=await authReq('token?grant_type=refresh_token',{refresh_token:s.refresh_token}); setSess(d); return d; }
+    try{
+      const s=sess();
+      if(!s||!s.refresh_token){ setSess(null); throw new Error('signed out'); }
+      const spent=s.refresh_token;
+      try{ return setSess(await authReq('token?grant_type=refresh_token',{refresh_token:spent})); }
+      catch(e){
+        /* A refusal is now ambiguous: the token is either dead or was spent a
+           moment ago by Ledger or Kitchen. Look for the session they minted
+           before concluding anyone is signed out — clearing the shared key
+           here would sign them out of all three at once. Only a refusal is
+           worth waiting on; a network error can't have been a sibling. */
+        if(authRefused(e)){
+          const other=await rotatedSession(spent, 2500);
+          if(other) return other;
+          setSess(null);
+        }
+        throw e;
+      }
+    }
     finally{ refreshing=null; }
   })();
   return refreshing;
+}
+/* Ledger and Kitchen write the shared session without our expires_at stamp, so
+   fall back to the token's own exp claim. Without this, every boot after using
+   a sibling would treat a perfectly fresh session as expired and spend the
+   refresh token for nothing. */
+function expiresAt(s){ return (s&&s.expires_at) || +jwtClaim(s&&s.access_token,'exp') || 0; }
+/* Swap the hour-old access token for a fresh one before it is needed, so
+   reopening the app after a week is one quiet round trip rather than a failed
+   request, and so a dead refresh token is discovered while we can still say so. */
+function ensureFresh(){
+  const s=sess();
+  if(!s||!s.refresh_token) return Promise.resolve(s);
+  if(expiresAt(s)*1000-Date.now()>120000) return Promise.resolve(s);
+  return refreshSession();
 }
 async function api(path, opts, retry){
   opts=opts||{}; if(retry===undefined) retry=true;
@@ -312,7 +413,9 @@ async function api(path, opts, retry){
     headers:Object.assign({apikey:SB_KEY, Authorization:'Bearer '+s.access_token, 'Content-Type':'application/json'}, opts.headers||{}),
     body:opts.body!==undefined?JSON.stringify(opts.body):undefined
   });
-  if(r.status===401 && retry){ try{ await refreshSession(); }catch(e){ setSess(null); boot(); throw e; } return api(path,opts,false); }
+  /* Bounce to the sign-in screen only if the refresh was actually refused —
+     refreshSession has already cleared the session in that case. */
+  if(r.status===401 && retry){ try{ await refreshSession(); }catch(e){ if(!sess()) boot(); throw e; } return api(path,opts,false); }
   if(!r.ok){ const t=await r.text(); throw new Error('DB '+r.status+': '+t.slice(0,160)); }
   if(r.status===204) return [];
   const txt=await r.text(); return txt?JSON.parse(txt):[];
@@ -831,10 +934,22 @@ function renderSettings(){
     el('section',null,
       el('div',{class:'head'}, el('h2',null,'Backup')),
       backupBox()),
+    appSwitcher(),
     el('section',null,
       el('div',{class:'head'}, el('h2',null,'Account'), el('span',{class:'sub'}, (sess()&&sess().user&&sess().user.email)||'')),
       el('div',{class:'btnrow'}, el('button',{onclick:()=>{ setSess(null); boot(); }},'Sign out')))
   ];
+}
+
+/* The three apps share a login, not a codebase — this is the door between
+   them, not a merge. Only drawn where the siblings actually sit next door. */
+function appSwitcher(){
+  if(!SIBLINGS.length) return null;
+  return el('section',null,
+    el('div',{class:'head'}, el('h2',null,'Your other apps')),
+    el('p',{class:'mut', style:'margin:0 0 12px'},
+      'Same account, same sign-in — no need to sign in again.'),
+    el('div',{class:'btnrow'}, SIBLINGS.map(([id,label])=>el('a',{href:'../'+id+'/'}, label))));
 }
 
 /* ---------- CSV import ---------- */
@@ -959,8 +1074,11 @@ function installHint(){
 function renderAuth(){
   const app=document.getElementById('app'); app.innerHTML='';
   let mode='in';   // 'in' | 'up' | 'forgot'
-  const email=el('input',{type:'email', placeholder:'Email', autocomplete:'username'});
-  const pw=el('input',{type:'password', placeholder:'Password', autocomplete:'current-password'});
+  /* name + autocomplete + a real form is the whole recipe for the iOS keychain:
+     without them Safari neither offers to save the password nor fills it back in. */
+  const email=el('input',{type:'email', id:'ot-email', name:'username', placeholder:'Email',
+    autocomplete:'username', inputmode:'email', autocapitalize:'none', autocorrect:'off', spellcheck:'false', required:''});
+  const pw=el('input',{type:'password', id:'ot-password', name:'password', placeholder:'Password', autocomplete:'current-password'});
   const msg=el('p',{class:'msg'});
   /* The invite trigger on auth.users raises not_invited, which Supabase relays
      as an opaque "Database error saving new user". Say what actually happened. */
@@ -995,42 +1113,54 @@ function renderAuth(){
     catch(e){ msg.textContent=authError(e); msg.className='msg err'; }
   }
   function to(m){ mode=m; msg.textContent=''; msg.className='msg'; draw2(); }
+  function submit(){ if(mode==='forgot') sendReset(); else if(mode==='up') signUp(); else go(); }
   function draw2(){
     app.innerHTML='';
     pw.setAttribute('autocomplete', mode==='up'?'new-password':'current-password');
     pw.setAttribute('placeholder', mode==='up'?'Choose a password':'Password');
-    app.appendChild(el('div',{class:'auth'},
+    /* A <form> that really submits is what WebKit watches for — it offers to
+       save the password once the form is submitted and then leaves the page.
+       Every other button therefore has to say type=button. */
+    app.appendChild(el('form',{class:'auth', onsubmit:e=>{ e.preventDefault(); submit(); }},
       el('h1',null,'Overtime'),
       el('p',{class:'mut', style:'margin:-6px 0 4px'},
         mode==='up' ? 'Sign-up is invite only — your email has to be on the list.'
         : IS_BETA  ? 'Beta. This account is separate from the main app.'
+        : SIBLINGS.length
+                   ? 'One account for Ledger, Overtime and Kitchen — sign in once and all three open.'
                    : 'Same account as Ledger.'),
       email, mode==='forgot'?null:pw,
       mode==='forgot'
-        ? el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:sendReset},'Send reset link'),
-            el('button',{onclick:()=>to('in')},'Back'))
+        ? el('div',{class:'btnrow'}, el('button',{class:'pri', type:'submit'},'Send reset link'),
+            el('button',{type:'button', onclick:()=>to('in')},'Back'))
         : mode==='up'
-        ? el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:signUp},'Create account'),
-            el('button',{onclick:()=>to('in')},'Back'))
-        : el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:go},'Sign in')),
-      mode==='in' ? el('button',{class:'authlink', onclick:()=>to('forgot')},'Forgot password?') : null,
-      mode==='in' ? el('button',{class:'authlink', onclick:()=>to('up')},'Have an invite? Create an account') : null,
+        ? el('div',{class:'btnrow'}, el('button',{class:'pri', type:'submit'},'Create account'),
+            el('button',{type:'button', onclick:()=>to('in')},'Back'))
+        : el('div',{class:'btnrow'}, el('button',{class:'pri', type:'submit'},'Sign in')),
+      mode==='in' ? el('button',{class:'authlink', type:'button', onclick:()=>to('forgot')},'Forgot password?') : null,
+      mode==='in' ? el('button',{class:'authlink', type:'button', onclick:()=>to('up')},'Have an invite? Create an account') : null,
       msg));
   }
-  pw.onkeydown=e=>{ if(e.key==='Enter'){ if(mode==='up') signUp(); else if(mode==='in') go(); } };
   draw2();
 }
 function renderResetPassword(rec){
   const app=document.getElementById('app'); app.innerHTML='';
-  const pw=el('input',{type:'password', placeholder:'New password', autocomplete:'new-password'});
+  /* Show the account the link belongs to: it tells you which password you are
+     changing, and it tells the keychain which saved entry to update instead of
+     leaving a second, nameless one behind. */
+  const addr=jwtClaim(rec.access_token,'email');
+  const who=el('input',{type:'email', name:'username', value:addr, autocomplete:'username',
+    readonly:'', 'aria-label':'Account', style:'color:var(--ink2)'});
+  const pw=el('input',{type:'password', name:'new-password', placeholder:'New password', autocomplete:'new-password'});
   const msg=el('p',{class:'msg'});
   async function go(){
     if(pw.value.length<6){ msg.textContent='At least 6 characters.'; msg.className='msg err'; return; }
     try{ await authReq('user',{password:pw.value},'PUT',rec.access_token); history.replaceState(null,'',location.pathname); setSess(rec); boot(); }
     catch(e){ msg.textContent=e.message; msg.className='msg err'; }
   }
-  app.appendChild(el('div',{class:'auth'}, el('h1',null,'New password'), pw,
-    el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:go},'Save password')), msg));
+  app.appendChild(el('form',{class:'auth', onsubmit:e=>{ e.preventDefault(); go(); }},
+    el('h1',null,'New password'), addr?who:null, pw,
+    el('div',{class:'btnrow'}, el('button',{class:'pri', type:'submit'},'Save password')), msg));
 }
 
 /* ---------- shell + boot ---------- */
@@ -1050,15 +1180,38 @@ function render(){
 async function boot(){
   const rec=recoveryFromHash(); if(rec){ renderResetPassword(rec); return; }
   if(!sess()){ renderAuth(); return; }
+  /* Signing in should hold until it's revoked. Ask the browser not to evict the
+     stored session when it is clearing space — iOS grants this outright to a
+     home-screen app. */
+  try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}
   busy(true);
-  try{ await loadAll(); if(!guideSeen()) S.guide=0; render(); }
-  catch(e){ if(sess()){ document.getElementById('app').innerHTML=''; document.getElementById('app').appendChild(
+  try{ await ensureFresh(); await loadAll(); if(!guideSeen()) S.guide=0; render(); }
+  catch(e){ if(!sess()) renderAuth();      // the refresh token was refused — genuinely signed out
+    else { document.getElementById('app').innerHTML=''; document.getElementById('app').appendChild(
       el('div',{class:'auth'}, el('h1',null,'Overtime'), el('p',{class:'msg err'}, navigator.onLine===false?'Offline.':e.message),
         el('div',{class:'btnrow'}, el('button',{class:'pri', onclick:boot},'Retry'), el('button',{onclick:()=>{ setSess(null); boot(); }},'Sign out')))); } }
   finally{ busy(false); }
 }
-/* Coming back to the PWA after hours: refetch so another device's entries show up. */
+/* Coming back to the PWA after hours: top the token up, then refetch so another
+   device's entries show up. */
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && sess() && S.share && !S.edit)
-  loadAll().then(render).catch(()=>{}); });
+  ensureFresh().then(()=>loadAll()).then(render).catch(()=>{}); });
+/* Everything cached for the account that just went away. Signing in as someone
+   else must not show a frame of the previous person's entries or pay periods. */
+function resetData(){
+  S.view='log'; S.month=monthStart(todayD()); S.logMonth=null; S.reportYear=null;
+  S.entries=[]; S.periods=[]; S.share=null; S.edit=null; S.draft=null; S.guide=null;
+}
+/* Signing in or out in one app lands in the other two straight away, instead of
+   surfacing later as a confusing 401. Token rotation writes this key too, so
+   only a real change — signed out, signed in, or a different account — reboots. */
+window.addEventListener('storage', e=>{
+  if(e.key && e.key!==SESS_KEY) return;          /* key is null on a clear() */
+  const uid=s=>(s&&s.user&&s.user.id)||null;
+  let was=null; try{ was=JSON.parse(e.oldValue||'null'); }catch(x){}
+  const now=sess();
+  if(!now){ resetData(); boot(); return; }
+  if(!was || uid(was)!==uid(now)){ resetData(); boot(); }
+});
 boot();
 </script>
