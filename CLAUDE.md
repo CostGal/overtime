@@ -49,7 +49,7 @@ Schema lives in `supabase/schema.sql` (reference copy; it was applied as the mig
 - `ot_entries` — `date`, `kind` (`overtime` | `absence` | `bonus`), `minutes`, `amount` (bonus only), `note`. A check constraint enforces: bonus ⇒ amount set; otherwise minutes > 0.
 - `ot_pay_periods` — `effective_from`, `bank`, `cash_base`, `ot_rate` (€/h), `payday` (1–28, default 5), `base_hours` (default 168). A period applies from its date until the next one.
 - `ot_share` — one row per user: `enabled`, `token`, `title`, `date_from`, `date_to`.
-- `ot_public_report(p_token)` — `security definer` RPC, the **only** thing `anon` can reach. Returns `{title, from, to, entries:[{date, minutes}]}` for `kind='overtime'` within the range, or `null` if sharing is off / token wrong.
+- `ot_public_report(p_token)` — `security definer` RPC, the **only** thing `anon` can reach. Returns `{title, from, to, entries:[{date, minutes}], absences:[{date, minutes}]}` within the range, or `null` if sharing is off / token wrong. `entries` stays overtime-only rather than growing a `kind` field, so a deployed `boss.html` from before absences were published keeps rendering correctly against the new RPC.
 
 RLS on every `ot_*` table: `user_id = auth.uid()`. The publishable key in the HTML is meant to be public.
 
@@ -58,7 +58,9 @@ RLS on every `ot_*` table: `user_id = auth.uid()`. The publishable key in the HT
 This repo is **public** (required for free GitHub Pages). So:
 
 1. **No personal data in the repo.** No entries, salary figures, rates, tokens, or exports. Pay terms live only in `ot_pay_periods`. Never commit CSV exports or SQL dumps with data.
-2. **The boss view never shows money.** `ot_public_report` must only ever return dates and overtime minutes — no pay, bank/cash split, bonuses, absences or notes. If you add a field to the boss view, it goes through that RPC and must pass this rule.
+2. **The boss view never shows money.** `ot_public_report` must only ever return dates and durations — overtime and absence minutes, nothing else. No pay, no rates, no bank/cash split, no bonuses, no notes. If you add a field to the boss view, it goes through that RPC and must pass this rule.
+
+   Absences were added to the boss view deliberately (Kostas asked for it) — the boss sees which days were missed and the headline total is overtime **net** of absence. That is a change to what a public link exposes, so it was a decision to confirm rather than infer. The money rule did not move: the boss sees the hours, never what they are worth.
 3. **Sharing is opt-in.** `ot_share.enabled` defaults to false; the RPC returns `null` when off. "New link" rotates the token so old links die.
 
 ## Pay maths (index.html → `monthCalc`)
@@ -66,11 +68,14 @@ This repo is **public** (required for free GitHub Pages). So:
 - OT pay per entry = `minutes / 60 × ot_rate` of the period covering **that entry's date**.
 - Bank and cash base come from the period covering the **1st of the month**.
 - The Log summary shows whichever month is **next to collect**: the previous month up to and including `payday`, this month after it (issues #1, #2).
-- Cash owed for a month = `cash_base + OT pay + bonuses`. Total = `bank + cash owed`.
-- Absences are tracked and shown, but don't change pay (matches the old sheet).
+- Cash owed for a month = `cash_base + OT pay + bonuses − absence cost`. Total = `bank + cash owed`.
+- **Absences dock pay.** Each absent hour costs an ordinary hour's pay — `plainRateFor(date)`, i.e. `(bank + cash_base) / base_hours` of the period covering **that entry's date**, the same per-entry lookup the OT rate uses. It comes off the overtime, so a light month of OT and a heavy month of absence can put cash owed *below* `cash_base`. That is not clamped at zero on purpose: the shortfall is real and hiding it would misreport the month.
+- `monthCalc` returns `absCost` alongside `otPay`; `otPay` stays **gross** everywhere it is displayed, and the deduction is shown as its own line. `reportStats` keeps `gross` (before absence) separate from `totalPay` (after), and takes percentage shares against `gross` — otherwise docking pay would make overtime look like a *larger* slice of it.
 - Workable days = Mon–Fri minus Greek public holidays (fixed dates + Orthodox-Easter-based Clean Monday, Good Friday, Easter Monday, Holy Spirit Monday — computed, no table).
 
-These reproduce the old Google Sheet's Dashboard exactly for Mar–Sep 2026. February differs by design (the sheet had hand-typed 11h/€66; the app computes from the 12h actually logged).
+These reproduced the old Google Sheet's Dashboard exactly for Mar–Sep 2026 until absences began docking pay. February differs by design (the sheet had hand-typed 11h/€66; the app computes from the 12h actually logged).
+
+Any month with an absence logged in it will now also come out under the sheet, because the sheet never deducted for absence. That is the intended new behaviour, not a regression — don't "reconcile" it back. Check which months are affected by looking at the data, not by trusting a list here; naming them with their amounts would put pay figures in a public repo.
 
 ## Architecture (index.html)
 

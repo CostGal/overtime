@@ -8,8 +8,9 @@
 <link rel="icon" href="icon-192.png" type="image/png">
 <style>
   /* Public, read-only report. Printable. Shows only what ot_public_report() returns:
-     dates + overtime minutes, and only while sharing is switched on in the app. */
-  :root{ --ink:#1A1A18; --ink2:#6B6B64; --rule:#E2E1DC; --acc:#D97757; --bg:#FAFAF7;
+     dates + overtime and absence minutes, and only while sharing is switched on in
+     the app. Never any money. */
+  :root{ --ink:#1A1A18; --ink2:#6B6B64; --rule:#E2E1DC; --acc:#D97757; --abs:#4A7796; --bg:#FAFAF7;
     --fut:"Futura","Futura PT","Avenir Next",Avenir,"Century Gothic",system-ui,sans-serif; }
   *{box-sizing:border-box}
   html{background:var(--bg)}
@@ -27,6 +28,8 @@
   td:last-child{padding-right:0}
   td.r{text-align:right; white-space:nowrap}
   td.dow{color:var(--ink2); width:40%}
+  h2.abs{color:var(--abs)}
+  tr.abs td.r{color:var(--abs)}
   .actions{display:flex; gap:8px; margin-top:30px}
   button{font-family:inherit; font-size:15px; min-height:46px; padding:0 18px; border-radius:10px; border:1px solid var(--acc); background:var(--acc); color:#fff; cursor:pointer}
   .foot{margin-top:28px; font-size:12.5px; color:var(--ink2)}
@@ -55,6 +58,8 @@ function el(tag, props, ...kids){
 function dmy(s){ const p=s.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
 function dur(min){ const h=Math.floor(min/60), m=min%60, out=[];
   if(h) out.push(h+(h===1?' ώρα':' ώρες')); if(m) out.push(m+' λεπτά'); return out.join(' ')||'0 λεπτά'; }
+/* The net total can go under zero when more was missed than made up. */
+function sdur(min){ return (min<0?'−':'')+dur(Math.abs(min)); }
 function dec(min){ return (Math.round(min/60*100)/100).toLocaleString('el-GR'); }
 function off(){ const a=document.getElementById('app'); a.innerHTML='';
   a.appendChild(el('p',{class:'off'},'Η αναφορά δεν είναι διαθέσιμη αυτή τη στιγμή.')); }
@@ -77,6 +82,11 @@ async function load(){
   d.entries.forEach(e=>{ byDay.set(e.date,(byDay.get(e.date)||0)+e.minutes); total+=e.minutes; });
   for(const [date,minutes] of byDay){ const k=date.slice(0,7); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push({date,minutes}); }
   const days=byDay.size;
+  /* Absences get their own section and come off the headline. Older links that
+     predate this are served the same payload, so guard the key. */
+  const absByDay=new Map(); let absTotal=0;
+  (d.absences||[]).forEach(e=>{ absByDay.set(e.date,(absByDay.get(e.date)||0)+e.minutes); absTotal+=e.minutes; });
+  const net=total-absTotal;
   const period = d.from&&d.to ? dmy(d.from)+' – '+dmy(d.to) : d.from ? 'Από '+dmy(d.from) : d.to ? 'Έως '+dmy(d.to) : 'Όλες οι καταχωρήσεις';
   document.title=d.title;
 
@@ -84,14 +94,23 @@ async function load(){
   a.append(
     el('h1',null,d.title),
     el('div',{class:'sub'},'Περίοδος: '+period),
-    el('div',{class:'total'}, el('div',{class:'k'},'Σύνολο υπερωριών'),
-      el('div',{class:'n'}, dur(total)), el('div',{class:'sub'}, (total%60 ? dec(total)+' ώρες · ' : '')+days+(days===1?' ημέρα':' ημέρες'))));
+    el('div',{class:'total'}, el('div',{class:'k'}, absTotal?'Καθαρό σύνολο':'Σύνολο υπερωριών'),
+      el('div',{class:'n'}, sdur(net)),
+      el('div',{class:'sub'}, absTotal
+        ? 'Υπερωρίες '+dur(total)+' · Απουσίες −'+dur(absTotal)
+        : (total%60 ? dec(total)+' ώρες · ' : '')+days+(days===1?' ημέρα':' ημέρες'))));
   if(!d.entries.length) a.append(el('p',{class:'sub'},'Δεν υπάρχουν υπερωρίες σε αυτή την περίοδο.'));
   for(const [k,rows] of groups){
     const [y,m]=k.split('-'); const sum=rows.reduce((s,e)=>s+e.minutes,0);
     a.append(el('h2',null, el('span',null,MONTHS[+m-1]+' '+y), el('span',null,dur(sum))),
       el('table',null, rows.map(e=>{ const dt=new Date(e.date+'T12:00:00');
         return el('tr',null, el('td',null,dmy(e.date)), el('td',{class:'dow'},DAYS[dt.getDay()]), el('td',{class:'r'},dur(e.minutes))); })));
+  }
+  if(absByDay.size){
+    const rows=[...absByDay].map(([date,minutes])=>({date,minutes})).sort((x,y)=>x.date<y.date?-1:1);
+    a.append(el('h2',{class:'abs'}, el('span',null,'Απουσίες'), el('span',null,'−'+dur(absTotal))),
+      el('table',null, rows.map(e=>{ const dt=new Date(e.date+'T12:00:00');
+        return el('tr',{class:'abs'}, el('td',null,dmy(e.date)), el('td',{class:'dow'},DAYS[dt.getDay()]), el('td',{class:'r'},'−'+dur(e.minutes))); })));
   }
   a.append(
     el('div',{class:'actions'}, el('button',{onclick:()=>window.print()},'Εκτύπωση / PDF')),

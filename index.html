@@ -485,24 +485,33 @@ function paydayFor(m){ const p=periodFor(key(monthStart(m))); return p&&p.payday
 /* Contracted hours in a month — the denominator for an effective hourly wage.
    168 = 21 days x 8h, which is exactly how the original OT rate was derived. */
 function baseHoursFor(m){ const p=periodFor(key(monthStart(m))); return p&&p.base_hours!=null ? +p.base_hours : 168; }
+/* What an ordinary hour is worth on a given day — bank + cash over the contracted
+   hours. This is the rate an absence is docked at, and it is looked up per entry
+   date exactly as the OT rate is, so terms changing mid-month apply from the day
+   they start rather than to the whole month. */
+function plainRateFor(dateStr){
+  const p=periodFor(dateStr); if(!p) return 0;
+  const bh=p.base_hours!=null?+p.base_hours:168;
+  return bh>0 ? (+p.bank + +p.cash_base)/bh : 0;
+}
 /* What an hour of overtime is worth against an hour of ordinary time. */
 function premiumFor(m){
   const p=periodFor(key(monthStart(m))); if(!p) return null;
-  const bh=p.base_hours!=null?+p.base_hours:168;
-  const plain=(+p.bank + +p.cash_base)/bh;
+  const plain=plainRateFor(key(monthStart(m)));
   if(!(plain>0)) return null;
   return {plain:plain, rate:+p.ot_rate, pct:(+p.ot_rate/plain-1)*100};
 }
 /* Everything the Report tab needs for one year, in a single pass. */
 function reportStats(y){
-  const r={otMin:0, otPay:0, bonus:0, absMin:0, base:0, baseHours:0, otDays:0, workDays:0,
+  const r={otMin:0, otPay:0, bonus:0, absMin:0, absCost:0, base:0, baseHours:0, otDays:0, workDays:0,
            months:[], byDow:[0,0,0,0,0,0,0], best:null, quiet:null};
   for(let i=0;i<12;i++){
     const d=new Date(y,i,1), c=monthCalc(d);
     if(!c.rows.length) continue;
-    r.otMin+=c.ot; r.otPay+=c.otPay; r.bonus+=c.bonus; r.absMin+=c.abs;
+    r.otMin+=c.ot; r.otPay+=c.otPay; r.bonus+=c.bonus; r.absMin+=c.abs; r.absCost+=c.absCost;
     r.otDays+=c.otDays; r.workDays+=c.work;
-    r.base += c.bank + (c.cash - c.otPay - c.bonus);   // bank + cash_base, before extras
+    // bank + cash_base: cash carries the extras and the absence deduction, so undo both
+    r.base += c.bank + (c.cash - c.otPay - c.bonus + c.absCost);
     r.baseHours += baseHoursFor(d);
     r.months.push({d:d, c:c});
     if(!r.best  || c.ot>r.best.c.ot ) r.best ={d:d, c:c};
@@ -510,23 +519,31 @@ function reportStats(y){
   }
   for(const e of S.entries)
     if(e.kind==='overtime' && +e.date.slice(0,4)===y) r.byDow[parseKey(e.date).getDay()]+=e.minutes;
-  r.totalPay=r.base + r.otPay + r.bonus;
+  /* Gross is what the year earned; totalPay is what it pays out after absence.
+     Shares are taken against gross — otherwise docking pay would make overtime
+     look like a bigger slice of it. */
+  r.gross=r.base + r.otPay + r.bonus;
+  r.totalPay=r.gross - r.absCost;
   r.paidHours=r.baseHours + r.otMin/60 - r.absMin/60;
   r.effective=r.paidHours>0 ? r.totalPay/r.paidHours : 0;
-  r.otShare=r.totalPay>0 ? (r.otPay+r.bonus)/r.totalPay*100 : 0;
+  r.otShare=r.gross>0 ? (r.otPay+r.bonus)/r.gross*100 : 0;
   return r;
 }
 function monthCalc(m){
   const mk=monthKey(m), p=periodFor(key(monthStart(m)));
   const rows=S.entries.filter(e=>e.date.slice(0,7)===mk);
-  let ot=0, abs=0, bonus=0, otPay=0; const days=new Set();
+  let ot=0, abs=0, bonus=0, otPay=0, absCost=0; const days=new Set();
   for(const e of rows){
     if(e.kind==='overtime'){ ot+=e.minutes; days.add(e.date); const r=periodFor(e.date); otPay+=e.minutes/60*(r?+r.ot_rate:0); }
-    else if(e.kind==='absence') abs+=e.minutes;
+    /* An hour missed costs an ordinary hour's pay, taken off the overtime. It is
+       not clamped at the OT pay: miss more than you made up and the month really
+       does come out under the cash base, and hiding that would be a lie. */
+    else if(e.kind==='absence'){ abs+=e.minutes; absCost+=e.minutes/60*plainRateFor(e.date); }
     else if(e.kind==='bonus') bonus+=+e.amount||0;
   }
-  const bank=p?+p.bank:0, cash=(p?+p.cash_base:0)+otPay+bonus;
-  return {rows, ot, abs, bonus, otPay, otDays:days.size, work:workdays(monthStart(m)), bank, cash, total:bank+cash, hasPay:!!p};
+  const bank=p?+p.bank:0, cash=(p?+p.cash_base:0)+otPay+bonus-absCost;
+  return {rows, ot, abs, bonus, otPay, absCost, otDays:days.size,
+          work:workdays(monthStart(m)), bank, cash, total:bank+cash, hasPay:!!p};
 }
 
 /* ---------- entry form (add + edit) ---------- */
@@ -601,15 +618,21 @@ function entryForm(existing){
   return box;
 }
 
+/* What a row is worth in money: overtime earns at its rate, absence docks an
+   ordinary hour. Nothing shown when no pay period covers the date. */
+function entryMoney(e){
+  if(e.kind==='overtime'){ const p=periodFor(e.date); return p ? eur(e.minutes/60*+p.ot_rate) : null; }
+  if(e.kind==='absence'){ const r=plainRateFor(e.date); return r>0 ? '−'+eur(e.minutes/60*r) : null; }
+  return null;
+}
 function entryRow(e){
   const d=parseKey(e.date);
-  const val = e.kind==='bonus' ? eur(e.amount) : hm(e.minutes);
-  const p = e.kind==='overtime' ? periodFor(e.date) : null;
+  const val = e.kind==='bonus' ? eur(e.amount) : hm(e.minutes), money=entryMoney(e);
   return el('div',{class:'row tap k-'+e.kind, onclick:()=>{ S.edit=e; render(); window.scrollTo(0,0); }},
     icon(e.kind),
     el('div',{class:'d'}, dmy(e.date).slice(0,5), el('small',null,DOW[d.getDay()])),
     el('div',{class:'name'}, e.kind!=='overtime'?el('span',{class:'tag'},KINDS[e.kind]):null, e.note||''),
-    el('div',{class:'v'}, val, p ? el('small',null, eur(e.minutes/60*p.ot_rate)) : null));
+    el('div',{class:'v'}, val, money ? el('small',null, money) : null));
 }
 
 /* ---------- views ---------- */
@@ -662,11 +685,13 @@ function renderMonths(){
       stat('OT pay', eur(c.otPay), 'hi k-overtime'),
       stat('OT days', el('span',null, String(c.otDays), el('small',null,' / '+c.work+' workdays'))),
       stat('Bonus', eur(c.bonus), 'k-bonus'+(c.bonus?' kind':''), 'bonus'),
-      c.abs ? stat('Absence', hm(c.abs), 'k-absence kind', 'absence') : null,
+      c.abs ? stat('Absence', el('span',null, hm(c.abs), c.absCost?el('small',null,' −'+eur(c.absCost)):null), 'k-absence kind', 'absence') : null,
       stat('Bank', eur(c.bank)),
       stat('Cash owed', eur(c.cash), 'hi'),
       stat('Total', eur(c.total), 'wide')),
     c.hasPay ? null : el('p',{class:'mut'},'No pay period covers this month — add one in Settings.'),
+    c.absCost ? el('p',{class:'mut'}, hm(c.abs)+' of absence comes off the overtime at the ordinary hourly rate: −'+eur(c.absCost)+
+      '. OT pay above is before that; cash owed is after.') : null,
     /* Entries deliberately live only in the Log tab (#8); this tab is the numbers. */
     el('p',{class:'mut', style:'margin-top:-8px'},
       c.rows.length ? c.rows.length+' entries this month — view and edit them in the Log tab.'
@@ -713,7 +738,7 @@ function renderReport(){
 
   const maxDow=Math.max.apply(null,r.byDow)||1;
   const maxMon=Math.max.apply(null,r.months.map(m=>m.c.ot))||1;
-  const pct=x=>r.totalPay>0 ? x/r.totalPay*100 : 0;
+  const pct=x=>r.gross>0 ? x/r.gross*100 : 0;
 
   return [
     el('div',{class:'topbar'}, el('h1',null,'Report'),
@@ -731,7 +756,8 @@ function renderReport(){
       stat('OT + bonus share', r.otShare.toFixed(1)+'%'),
       stat('Avg / month', hm(r.otMin/n)),
       stat('Days with OT', el('span',null, String(r.otDays), el('small',null,' / '+r.workDays+' workdays'))),
-      stat('Bonus', eur(r.bonus), 'k-bonus'+(r.bonus?' kind':''), 'bonus')),
+      stat('Bonus', eur(r.bonus), 'k-bonus'+(r.bonus?' kind':''), 'bonus'),
+      r.absMin ? stat('Absence', el('span',null, hm(r.absMin), r.absCost?el('small',null,' −'+eur(r.absCost)):null), 'k-absence kind', 'absence') : null),
 
     prem ? el('p',{class:'mut', style:'margin-top:-10px'},
       'An ordinary hour is worth '+eur(prem.plain)+' at '+baseHoursFor(monthStart(todayD()))+
@@ -747,7 +773,11 @@ function renderReport(){
       el('div',{class:'legend'},
         el('span',null, el('i',{style:'background:#3E3E39'}),'Base '+eur(r.base)),
         el('span',null, el('i',{style:'background:#D97757'}),'Overtime '+eur(r.otPay)),
-        el('span',null, el('i',{style:'background:#D4A24C'}),'Bonus '+eur(r.bonus)))),
+        el('span',null, el('i',{style:'background:#D4A24C'}),'Bonus '+eur(r.bonus))),
+      /* The bar is the gross split; the deduction is a line under it rather than
+         a slice, because it takes away from the whole rather than making one up. */
+      r.absCost ? el('p',{class:'mut', style:'margin-top:12px'},
+        'Gross '+eur(r.gross)+' less '+hm(r.absMin)+' of absence at the ordinary rate, −'+eur(r.absCost)+'.') : null),
 
     el('section',null,
       el('div',{class:'head'}, el('h2',null,'Overtime by weekday')),
@@ -765,7 +795,7 @@ function renderReport(){
       el('p',{class:'mut', style:'margin-top:14px'},
         'Busiest was '+MONF[r.best.d.getMonth()]+' at '+hm(r.best.c.ot)+
         '; quietest '+MONF[r.quiet.d.getMonth()]+' at '+hm(r.quiet.c.ot)+'.'+
-        (r.absMin?' Absence across the year: '+hm(r.absMin)+'.':'')))
+        (r.absMin?' Absence across the year: '+hm(r.absMin)+', costing '+eur(r.absCost)+'.':'')))
   ];
 }
 
@@ -783,15 +813,19 @@ function renderShare(){
   const from=el('input',{type:'date', value:sh.date_from||'', onchange:e=>run({date_from:e.target.value||null})});
   const to=el('input',{type:'date', value:sh.date_to||'', onchange:e=>run({date_to:e.target.value||null})});
   const title=el('input',{type:'text', value:sh.title, onchange:e=>run({title:e.target.value.trim()||'Υπερωρίες'},'Title saved.')});
-  const shown=S.entries.filter(e=>e.kind==='overtime' && (!sh.date_from||e.date>=sh.date_from) && (!sh.date_to||e.date<=sh.date_to));
+  const inRange=e=>(!sh.date_from||e.date>=sh.date_from) && (!sh.date_to||e.date<=sh.date_to);
+  const shown=S.entries.filter(e=>e.kind==='overtime' && inRange(e));
+  const shownAbs=S.entries.filter(e=>e.kind==='absence' && inRange(e));
   const shownMin=shown.reduce((a,e)=>a+e.minutes,0);
+  const shownAbsMin=shownAbs.reduce((a,e)=>a+e.minutes,0);
   return [
     el('div',{class:'topbar'}, el('h1',null,'Boss view')),
     el('button',{class:'sharebtn'+(sh.enabled?' on':''), onclick:()=>run({enabled:!sh.enabled}, sh.enabled?'Boss view is off.':'Boss view is live.')},
       sh.enabled ? 'Live — tap to turn off' : 'Off — tap to go live'),
-    el('p',{class:'mut'}, 'The link shows dates and overtime hours only — no pay, cash, bonuses, absences or notes. While it’s off, the link shows nothing.'),
+    el('p',{class:'mut'}, 'The link shows dates and hours — overtime, and the absences netted off it. Never pay, cash, bonuses or notes. While it’s off, the link shows nothing.'),
     el('section',null,
-      el('div',{class:'head'}, el('h2',null,'What it shows'), el('span',{class:'sub'}, new Set(shown.map(e=>e.date)).size+' days · '+hm(shownMin))),
+      el('div',{class:'head'}, el('h2',null,'What it shows'), el('span',{class:'sub'},
+        new Set(shown.map(e=>e.date)).size+' days · '+hm(shownMin)+(shownAbsMin?' − '+hm(shownAbsMin)+' absence':''))),
       el('div',{class:'quick', style:'margin-bottom:12px'}, presets.map(([l,a,b])=>
         el('button',{class:(sh.date_from||null)===a&&(sh.date_to||null)===b?'on':'', onclick:()=>run({date_from:a, date_to:b})}, l))),
       el('div',{class:'form'},
@@ -1031,7 +1065,7 @@ const SLIDES=[
   {k:'overtime', t:'Log it the day it happens',
    b:'Tap a duration, hit Log it, done. The app works out what you are owed from the overtime rate in force on that day — no arithmetic, no spreadsheet.'},
   {k:'absence', t:'Three kinds, three colours',
-   b:'Overtime adds to your pay. Absence is tracked but never changes what you are paid. Bonus is a flat amount. Each carries its own colour and mark so you can tell them apart at a glance.'},
+   b:'Overtime adds to your pay. Absence takes an ordinary hour’s pay back off it for every hour missed. Bonus is a flat amount. Each carries its own colour and mark so you can tell them apart at a glance.'},
   {k:'bonus', t:'Everything is editable',
    b:'Tap any entry in the Log to change or delete it. Use the arrows beside the month name to go back through earlier months.'},
   {k:null, t:'Months is the numbers',
@@ -1039,7 +1073,7 @@ const SLIDES=[
   {k:null, t:'Pay terms live in Settings',
    b:'Bank, cash, the overtime rate and your payday. Add a new period whenever your terms change — earlier months keep the rate they were earned under.'},
   {k:null, t:'The boss view is yours to switch on',
-   b:'It publishes dates and overtime hours only — never pay, bonuses, absences or notes. Switch it off and the link goes dead. New link kills the old one.'}
+   b:'It publishes dates and hours — overtime and absence, netted off against each other. Never pay, bonuses or notes. Switch it off and the link goes dead. New link kills the old one.'}
 ];
 function guideSeen(){ try{ return localStorage.getItem(GUIDE_KEY)==='1'; }catch(e){ return true; } }
 function renderGuide(){
