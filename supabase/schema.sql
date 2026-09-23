@@ -61,7 +61,9 @@ begin new.updated_at := now(); return new; end $$;
 create trigger ot_entries_touch before update on public.ot_entries for each row execute function public.ot_touch();
 create trigger ot_share_touch   before update on public.ot_share   for each row execute function public.ot_touch();
 
--- The only thing anon can reach: overtime dates + minutes, and only while sharing is on.
+-- The only thing anon can reach: overtime and absence dates + minutes, and only
+-- while sharing is on. Dates and durations only — never pay, rates or notes.
+-- 'entries' stays overtime-only so an older deployed boss.html keeps working.
 create or replace function public.ot_public_report(p_token text)
 returns jsonb language sql stable security definer
 set search_path = '' as $$
@@ -73,6 +75,13 @@ set search_path = '' as $$
       select jsonb_agg(jsonb_build_object('date', e.date, 'minutes', e.minutes) order by e.date, e.created_at)
       from public.ot_entries e
       where e.user_id = s.user_id and e.kind = 'overtime' and e.minutes > 0
+        and (s.date_from is null or e.date >= s.date_from)
+        and (s.date_to   is null or e.date <= s.date_to)
+    ), '[]'::jsonb),
+    'absences', coalesce((
+      select jsonb_agg(jsonb_build_object('date', e.date, 'minutes', e.minutes) order by e.date, e.created_at)
+      from public.ot_entries e
+      where e.user_id = s.user_id and e.kind = 'absence' and e.minutes > 0
         and (s.date_from is null or e.date >= s.date_from)
         and (s.date_to   is null or e.date <= s.date_to)
     ), '[]'::jsonb)
