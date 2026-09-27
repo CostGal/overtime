@@ -733,7 +733,11 @@ function renderReport(){
   const stat=(k,v,cls,ik)=>el('div',{class:'stat'+(cls?' '+cls:'')},
     el('div',{class:'k'}, ik?icon(ik):null, k), el('div',{class:'n'},v));
   if(!n) return [
-    el('div',{class:'topbar'}, el('h1',null,'Report')),
+    el('div',{class:'topbar'}, el('h1',null,'Report'),
+      el('div',{class:'nav'},
+        el('button',{onclick:()=>{ S.reportYear=y-1; render(); }, 'aria-label':'previous year'},'‹'),
+        el('span',{class:'sub', style:'padding:0 4px'},String(y)),
+        el('button',{onclick:()=>{ S.reportYear=y+1; render(); }, 'aria-label':'next year'},'›'))),
     el('div',{class:'empty'},'Nothing logged in '+y+' yet.')];
 
   const maxDow=Math.max.apply(null,r.byDow)||1;
